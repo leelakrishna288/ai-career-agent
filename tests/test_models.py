@@ -1,4 +1,10 @@
-from career_agent.models import JobPosting, canonical_url, normalise_role
+from career_agent.models import (
+    JobPosting,
+    canonical_url,
+    normalise_role,
+    same_posting,
+    url_identity,
+)
 
 
 class TestDeduplication:
@@ -13,6 +19,40 @@ class TestDeduplication:
     def test_meaningful_parameters_are_kept(self):
         assert "id=9" in canonical_url("https://x.co/j?id=9&gclid=abc")
         assert "gclid" not in canonical_url("https://x.co/j?id=9&gclid=abc")
+
+    def test_trailing_slash_before_a_query_is_stripped(self):
+        """Regression: a live run tracked the same Wells Fargo job twice because
+        '.../r-492891/?utm_source=x' kept its slash while '.../r-492891?id=7'
+        did not."""
+        a = canonical_url("https://x.co/en/jobs/r-492891/?utm_source=linkedin&trk=feed")
+        b = canonical_url("https://x.co/en/jobs/r-492891?gh_src=abc")
+        assert a == b == "https://x.co/en/jobs/r-492891"
+
+    def test_identifier_params_are_kept_but_tracking_is_not(self):
+        assert url_identity("https://x.co/j?currentJobId=111&utm_source=li") == (
+            "https://x.co/j",
+            frozenset({"111"}),
+        )
+
+    def test_same_path_with_one_missing_identifier_is_the_same_posting(self):
+        assert same_posting(
+            "https://x.co/en/jobs/r-492891/?utm_source=li", "https://x.co/en/jobs/r-492891?id=7"
+        )
+
+    def test_same_path_with_conflicting_identifiers_is_not(self):
+        """LinkedIn serves many jobs from one path, distinguished only by
+        currentJobId. Merging those would silently drop real applications."""
+        assert not same_posting(
+            "https://linkedin.com/jobs/view/?currentJobId=111",
+            "https://linkedin.com/jobs/view/?currentJobId=222",
+        )
+
+    def test_a_missing_url_cannot_contradict(self):
+        assert same_posting("https://x.co/j?id=1", "")
+        assert same_posting("", "")
+
+    def test_different_paths_are_different_postings(self):
+        assert not same_posting("https://x.co/jobs/a", "https://x.co/jobs/b")
 
     def test_same_job_two_boards_gets_one_id(self):
         a = JobPosting(

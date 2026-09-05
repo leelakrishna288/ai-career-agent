@@ -70,6 +70,48 @@ class TestTailoring:
 
 
 class TestTracker:
+    def test_real_world_duplicate_from_two_boards(self, tmp_path):
+        """The exact pair that slipped through a live run: the same Wells Fargo
+        requisition, posted on LinkedIn and on Naukri, with different title
+        spellings and different URL noise."""
+        t = Tracker(tmp_path / "t.jsonl")
+        a, created_a = t.add(
+            JobPosting(
+                company="Wells Fargo",
+                role="Senior Software Engineer - Java, Kafka, Python, AI/GenAI",
+                url="https://www.wellsfargojobs.com/en/jobs/r-492891/?utm_source=linkedin&trk=feed",
+            )
+        )
+        b, created_b = t.add(
+            JobPosting(
+                company="Wells Fargo",
+                role="Sr. Software Engineer II (Java / Kafka / Python / AI GenAI) - Remote",
+                url="https://www.wellsfargojobs.com/en/jobs/r-492891?gh_src=abc&id=7",
+            )
+        )
+        assert created_a and not created_b
+        assert a.application_id == b.application_id
+        assert len(t.all()) == 1
+
+    def test_two_linkedin_jobs_on_one_path_stay_separate(self, tmp_path):
+        t = Tracker(tmp_path / "t.jsonl")
+        _, c1 = t.add(
+            JobPosting(
+                company="Acme",
+                role="AI Engineer",
+                url="https://linkedin.com/jobs/view/?currentJobId=111",
+            )
+        )
+        _, c2 = t.add(
+            JobPosting(
+                company="Acme",
+                role="AI Engineer",
+                url="https://linkedin.com/jobs/view/?currentJobId=222",
+            )
+        )
+        assert c1 and c2
+        assert len(t.all()) == 2
+
     def test_duplicate_jobs_do_not_create_two_rows(self, tmp_path):
         t = Tracker(tmp_path / "t.jsonl")
         a, created_a = t.add(

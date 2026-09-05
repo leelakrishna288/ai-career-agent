@@ -200,24 +200,102 @@ def normalise_role(role: str) -> str:
     return " ".join(t for t in cleaned.split() if any(c.isalnum() for c in t))
 
 
-def canonical_url(url: str) -> str:
-    """Strip tracking parameters and fragments so the same posting shared two
-    ways is recognised as one job."""
+# Query parameters that identify *which* job, as opposed to where the click came
+# from. LinkedIn uses currentJobId, Greenhouse gh_jid, Workday jobId, and so on.
+_ID_PARAMS = (
+    "id",
+    "jobid",
+    "job_id",
+    "currentjobid",
+    "gh_jid",
+    "jid",
+    "req",
+    "reqid",
+    "requisitionid",
+    "posting",
+    "postingid",
+    "vacancyid",
+    "pid",
+)
+_TRACKING_PREFIXES = (
+    "utm_",
+    "gh_src",
+    "src",
+    "ref",
+    "trk",
+    "fbclid",
+    "gclid",
+    "msclkid",
+    "referer",
+    "referrer",
+    "source",
+    "campaign",
+    "mc_cid",
+    "mc_eid",
+    "position",
+    "pagenum",
+    "origin",
+    "savedsearchid",
+    "eblib",
+)
+
+
+def _split_url(url: str) -> tuple[str, list[tuple[str, str]]]:
+    """Return (base without trailing slash, [(key, value)]) with the fragment gone."""
     if not url:
-        return ""
-    url = url.split("#", 1)[0].strip().rstrip("/")
+        return "", []
+    url = url.split("#", 1)[0].strip()
     base, sep, query = url.partition("?")
+    # Strip the trailing slash from the PATH, not just from the whole string - a
+    # URL with a query keeps its slash otherwise, and ".../r-492891/?utm_source=x"
+    # then fails to match ".../r-492891?id=7". That bug let the same job be
+    # tracked twice, which is exactly what deduplication exists to prevent.
+    base = base.rstrip("/").lower()
     if not sep:
-        return base.lower()
-    keep = [
-        p
-        for p in query.split("&")
-        if p
-        and not p.split("=", 1)[0]
-        .lower()
-        .startswith(("utm_", "gh_src", "src", "ref", "trk", "fbclid", "gclid"))
-    ]
-    return (base + ("?" + "&".join(sorted(keep)) if keep else "")).lower()
+        return base, []
+    pairs = []
+    for part in query.split("&"):
+        if not part:
+            continue
+        key, _, value = part.partition("=")
+        pairs.append((key.lower(), value))
+    return base, pairs
+
+
+def canonical_url(url: str) -> str:
+    """Strip tracking parameters, fragments and trailing slashes so the same
+    posting shared two ways is recognised as one job."""
+    base, pairs = _split_url(url)
+    if not base:
+        return ""
+    keep = [f"{k}={v}" for k, v in pairs if not k.startswith(_TRACKING_PREFIXES)]
+    return base + ("?" + "&".join(sorted(keep)) if keep else "")
+
+
+def url_identity(url: str) -> tuple[str, frozenset[str]]:
+    """(path, identifier values) - the two things that decide whether two URLs
+    point at the same posting. Everything else is noise."""
+    base, pairs = _split_url(url)
+    ids = frozenset(v.lower() for k, v in pairs if k in _ID_PARAMS and v)
+    return base, ids
+
+
+def same_posting(url_a: str, url_b: str) -> bool:
+    """True when two URLs are the same job posting.
+
+    Same path and no conflicting identifier counts as the same posting: one
+    board appends ?id=7, another appends nothing. Different identifier values
+    on the same path do NOT match - LinkedIn serves many jobs from one path,
+    distinguished only by currentJobId, and merging those would silently drop
+    real applications.
+    """
+    if not url_a or not url_b:
+        return True  # a missing URL cannot contradict the company+role match
+    path_a, ids_a = url_identity(url_a)
+    path_b, ids_b = url_identity(url_b)
+    if path_a != path_b:
+        return False
+    return not ids_a or not ids_b or ids_a == ids_b
 
 
 class SkillMatch(BaseModel):

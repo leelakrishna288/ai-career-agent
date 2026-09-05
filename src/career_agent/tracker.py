@@ -18,7 +18,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import Application, Decision, JobPosting, Status, canonical_url, normalise_role
+from .models import (
+    Application,
+    Decision,
+    JobPosting,
+    Status,
+    canonical_url,
+    normalise_role,
+    same_posting,
+)
 
 FIELDS = [
     "application_id",
@@ -58,12 +66,24 @@ class Tracker:
     # ------------------------------------------------------------------
     @staticmethod
     def dedupe_key(company: str, role: str, url: str) -> str:
+        """The strict key. Kept for inspection and tests; `find` is deliberately
+        looser, because job boards mangle URLs more than they mangle titles."""
         return f"{company.strip().lower()}|{normalise_role(role)}|{canonical_url(url)}"
 
+    @staticmethod
+    def _company_role_key(company: str, role: str) -> str:
+        return f"{company.strip().lower()}|{normalise_role(role)}"
+
     def find(self, company: str, role: str, url: str = "") -> Application | None:
-        key = self.dedupe_key(company, role, url)
+        """Two postings are the same job when the company and the normalised role
+        match AND the URLs do not contradict each other. Title noise is stripped
+        ("Sr. Software Engineer II ... - Remote" == "Senior Software Engineer");
+        URL noise is stripped separately (see models.same_posting)."""
+        key = self._company_role_key(company, role)
         for app in self._apps.values():
-            if self.dedupe_key(app.company, app.role, app.url) == key:
+            if self._company_role_key(app.company, app.role) != key:
+                continue
+            if same_posting(app.url, url):
                 return app
         return None
 
