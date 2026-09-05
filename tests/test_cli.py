@@ -1,11 +1,12 @@
 import json
+from pathlib import Path
 
-from tests.conftest import ROOT
 from typer.testing import CliRunner
 
 from career_agent.cli import app
 
 runner = CliRunner()
+ROOT = Path(__file__).resolve().parents[1]
 PROFILE = str(ROOT / "profile" / "master_profile.yaml")
 GOOD_JOB = str(ROOT / "examples" / "jpmorgan_hyderabad.yaml")
 BAD_JOB = str(ROOT / "examples" / "senior_ml_riyadh.yaml")

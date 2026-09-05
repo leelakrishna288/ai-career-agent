@@ -11,6 +11,14 @@ from career_agent.profile_store import load_profile  # noqa: E402
 
 
 @pytest.fixture(scope="session")
+def repo_root():
+    """Repository root. A fixture rather than a module-level constant imported
+    across test files - `from tests.conftest import ROOT` relies on pytest's
+    rootdir landing on sys.path, which is not guaranteed across versions."""
+    return ROOT
+
+
+@pytest.fixture(scope="session")
 def profile():
     return load_profile(ROOT / "profile" / "master_profile.yaml")
 

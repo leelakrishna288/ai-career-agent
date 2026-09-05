@@ -1,10 +1,12 @@
 import io
 import json
+from pathlib import Path
 
 import pytest
-from tests.conftest import ROOT
 
 from career_agent.mcp_server import PROTOCOL_VERSION, TOOLS, CareerAgentMCPServer
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture

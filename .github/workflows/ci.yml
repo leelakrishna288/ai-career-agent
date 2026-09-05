@@ -12,6 +12,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      # Report every version. Without this, the first failure cancels the others
+      # and hides whether the problem is version-specific.
+      fail-fast: false
       matrix:
         python: ["3.10", "3.11", "3.12"]
     steps:

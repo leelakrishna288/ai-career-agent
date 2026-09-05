@@ -13,7 +13,10 @@ authors = [{ name = "Naga Leela Krishna Rajamahendravarapu" }]
 dependencies = ["pydantic>=2.6", "pyyaml>=6.0", "typer>=0.12", "rich>=13.7"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4", "mypy>=1.10", "bandit>=1.7"]
+dev = [
+  "pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4", "mypy>=1.10",
+  "bandit>=1.7", "pip-audit>=2.7", "types-PyYAML",
+]
 
 [project.scripts]
 career-agent = "career_agent.cli:app"
@@ -25,6 +28,12 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["career_agent"]
+ignore_missing_imports = true
+disallow_untyped_defs = false
 
 [tool.ruff]
 line-length = 100
