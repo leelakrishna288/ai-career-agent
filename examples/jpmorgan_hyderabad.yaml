@@ -1,0 +1,14 @@
+# A real posting shape, used as a worked example.
+company: "JPMorgan Chase"
+role: "Software Engineer III - Java/Python - AIML"
+location: "Hyderabad"
+country: "India"
+work_mode: onsite
+url: "https://www.themuse.com/jobs/jpmorganchase/software-engineer-iii-java-python-aiml"
+source: "themuse"
+min_years: 3
+required_skills: ["Python", "Java", "LangGraph", "MCP", "AWS", "REST API"]
+preferred_skills: ["RAG", "vector databases", "Docker", "CI/CD"]
+description: >-
+  Build and operate agentic AI services using LLMs, retrieval-augmented generation
+  and the Model Context Protocol on AWS, alongside existing Java estates.

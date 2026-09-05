@@ -1,0 +1,11 @@
+# An example the scorer should hard-reject rather than flatter.
+company: "Example Analytics"
+role: "Principal Machine Learning Engineer"
+location: "Riyadh"
+country: "Saudi Arabia"
+work_mode: onsite
+min_years: 10
+required_skills: ["PyTorch", "TensorFlow", "MLOps", "Kubernetes", "distributed systems", "Python"]
+preferred_skills: ["Arabic NLP", "fine-tuning"]
+mandatory_qualifications: ["PhD in Machine Learning"]
+description: "Lead model training and large-scale distributed inference."

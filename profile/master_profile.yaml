@@ -1,0 +1,134 @@
+# MASTER PROFILE - the single source of truth.
+#
+# Nothing may appear on a generated resume unless it appears here at a
+# printable label (VERIFIED, PARTIALLY_VERIFIED or TRANSFERABLE). Skills at
+# LEARNING or UNSUPPORTED are recorded deliberately so the system knows they
+# exist and knows not to print them.
+#
+# This file is never modified automatically.
+
+name: "Naga Leela Krishna Rajamahendravarapu"
+email: "leelakrishna288@gmail.com"
+phone: "+91-7032533215"
+location: "Hyderabad, India"
+linkedin: "https://www.linkedin.com/in/naga-leela-krishna-rajamahendravarapu-a94479167/"
+github: "https://github.com/leelakrishna288"
+years_experience: 4.7
+notice_period_days: 90
+
+summary_sentences:
+  - "AI engineer with 4.7 years of production backend engineering, now building agentic AI systems end to end."
+  - "Built Muraqib, an AI-governance assessment platform with a six-node agent orchestrator, hybrid RAG retrieval, an MCP server, prompt-injection and PII guardrails, and an evaluation harness that gates CI."
+  - "Strong in secure REST API engineering in Java, OAuth2/OIDC identity integration, SAST/DAST remediation and regulated life-sciences data pipelines."
+  - "Looking for AI and GenAI engineering roles where LLM application work has to meet enterprise security, auditability and compliance bars."
+
+skills:
+  # --- AI / agentic: VERIFIED by shipped code in the Muraqib repository ---
+  - { name: "Python", label: VERIFIED, years: 1.0, evidence: "Muraqib: ~6,700 lines, typed, 140 tests, 86% coverage", aliases: ["python3"] }
+  - { name: "Agent orchestration", label: VERIFIED, evidence: "Muraqib: six-node explicit state graph with checkpointing and resume", aliases: ["agentic ai", "agentic", "multi-agent", "agents", "ai agents"] }
+  - { name: "Model Context Protocol", label: VERIFIED, evidence: "Muraqib and this repo: MCP servers, JSON-RPC 2.0 over stdio", aliases: ["mcp"] }
+  - { name: "RAG", label: VERIFIED, evidence: "Muraqib: hybrid BM25 + dense retrieval with a labelled recall benchmark", aliases: ["retrieval augmented generation", "retrieval-augmented generation"] }
+  - { name: "Vector databases", label: VERIFIED, evidence: "Muraqib: in-memory, Chroma and pgvector backends behind one interface", aliases: ["vector db", "chroma", "pgvector", "vector store"] }
+  - { name: "Embeddings", label: VERIFIED, evidence: "Muraqib: sentence-transformers plus a deterministic hashed fallback" }
+  - { name: "LLM APIs", label: VERIFIED, evidence: "Muraqib: Anthropic, OpenAI, Azure OpenAI, Gemini, Groq, Ollama behind one interface", aliases: ["openai", "anthropic", "claude", "gemini", "azure openai", "llm"] }
+  - { name: "Tool calling", label: VERIFIED, evidence: "MCP tool schemas and structured invocation in both repos", aliases: ["function calling", "structured outputs"] }
+  - { name: "Prompt engineering", label: VERIFIED, evidence: "Muraqib: prompt templates with data/instruction separation and abstention bias", aliases: ["context engineering"] }
+  - { name: "AI guardrails", label: VERIFIED, evidence: "Muraqib: injection defence, PII redaction, schema validation, citation grounding", aliases: ["guardrails", "prompt injection"] }
+  - { name: "LLM evaluation", label: VERIFIED, evidence: "Muraqib: five-metric harness with golden set, gating CI", aliases: ["evals", "evaluation", "llm evals"] }
+  - { name: "LLM observability", label: VERIFIED, evidence: "Muraqib: tracing, token/cost accounting, run budgets, hash-chained audit ledger", aliases: ["observability", "tracing"] }
+  - { name: "AI governance", label: VERIFIED, evidence: "Muraqib: 121 controls across NDMO, SDAIA, PDPL, EU AI Act, GDPR, NIST AI RMF, ISO/IEC 42001", aliases: ["responsible ai", "ai compliance", "ai risk"] }
+  - { name: "FastAPI", label: VERIFIED, evidence: "Muraqib REST service with OIDC auth, rate limiting and security headers" }
+  - { name: "Pydantic", label: VERIFIED, evidence: "Domain models and structured-output validation in both repos" }
+  - { name: "Docker", label: VERIFIED, evidence: "Muraqib: multi-stage non-root hardened image with health check", aliases: ["containers", "containerisation"] }
+  - { name: "GitHub Actions", label: VERIFIED, evidence: "CI across Python 3.10-3.12 with lint, types, tests, security and eval gates", aliases: ["ci/cd", "ci"] }
+  - { name: "pytest", label: VERIFIED, evidence: "140 tests in Muraqib" }
+
+  # --- Backend / enterprise: VERIFIED or PARTIALLY_VERIFIED from employment ---
+  - { name: "Java", label: VERIFIED, years: 4.7, evidence: "Accenture: production enterprise applications and REST APIs" }
+  - { name: "REST API", label: VERIFIED, years: 4.7, evidence: "Accenture: Jersey/JAX-RS services", aliases: ["rest apis", "rest", "api development"] }
+  - { name: "Jersey (JAX-RS)", label: VERIFIED, evidence: "Accenture", aliases: ["jax-rs", "jersey"] }
+  - { name: "Oracle", label: PARTIALLY_VERIFIED, years: 4.0, evidence: "Accenture: SQL, PL/SQL, stored procedures, query optimisation", aliases: ["oracle sql", "plsql", "pl/sql"] }
+  - { name: "SQL", label: VERIFIED, years: 4.7, evidence: "Accenture" }
+  - { name: "OAuth2 / OIDC", label: VERIFIED, evidence: "Accenture: Oracle IDCS SSO integration. Muraqib: JWKS verification against Entra ID", aliases: ["oauth", "oauth2", "oidc", "sso", "single sign-on", "entra id", "oracle idcs"] }
+  - { name: "Secure coding", label: PARTIALLY_VERIFIED, evidence: "Accenture: 65+ SAST/DAST/OSS findings remediated", aliases: ["sast", "dast", "application security", "sca"] }
+  - { name: "JUnit", label: PARTIALLY_VERIFIED, evidence: "Accenture: unit-test automation for core service methods" }
+  - { name: "Oracle Life Sciences Hub", label: VERIFIED, evidence: "Accenture: built ingestion utilities loading into LSH and DMW", aliases: ["lsh", "dmw", "oracle dmw"] }
+  - { name: "Git", label: VERIFIED, evidence: "Daily use" }
+  - { name: "Maven", label: PARTIALLY_VERIFIED, evidence: "Accenture build tooling" }
+  - { name: "Swagger / OpenAPI", label: PARTIALLY_VERIFIED, evidence: "Accenture: API specifications", aliases: ["openapi", "swagger"] }
+  - { name: "JIRA", label: VERIFIED, evidence: "Accenture" }
+  - { name: "Postman", label: VERIFIED, evidence: "Accenture" }
+  - { name: "AWS", label: TRANSFERABLE, evidence: "AWS Certified Cloud Practitioner; no production delivery" }
+  - { name: "Azure", label: TRANSFERABLE, evidence: "AZ-900, AI-900, DP-900, SC-900; no production delivery" }
+  - { name: "Google Cloud", label: TRANSFERABLE, evidence: "Cloud Digital Leader; no production delivery" }
+
+  # --- Recorded so the system knows NOT to print them ---
+  - { name: "Spring Boot", label: LEARNING, evidence: "Listed on earlier resumes; no deep production experience. Must not be printed as a competency." , aliases: ["spring", "spring mvc", "jpa"] }
+  - { name: "Microservices", label: UNSUPPORTED, evidence: "No production microservices ownership." }
+  - { name: "LangChain", label: LEARNING, evidence: "Not used. Named in 15 of 20 surveyed postings - highest-priority gap.", aliases: ["langgraph", "llamaindex", "crewai"] }
+  - { name: "Kubernetes", label: UNSUPPORTED, evidence: "No hands-on experience.", aliases: ["k8s"] }
+  - { name: "Machine learning", label: UNSUPPORTED, evidence: "AI-900 certification only; no model training or fine-tuning work.", aliases: ["ml", "deep learning", "pytorch", "tensorflow", "fine-tuning", "mlops"] }
+
+experience:
+  - employer: "Accenture"
+    title: "Custom Software Engineering Analyst"
+    location: "Hyderabad, India"
+    start: "Jan 2022"
+    end: "Present"
+    label: VERIFIED
+    bullets:
+      - "Developed and maintained production enterprise applications and backend REST APIs in Java (Jersey / JAX-RS) across multiple release versions of regulated life-sciences data platforms."
+      - "Built internal data-processing utilities from scratch that ingest pharmaceutical and drug-discovery data and load it into Oracle Life Sciences Hub (LSH) and Data Management Workbench (DMW), owning each end to end from design through testing and deployment."
+      - "Integrated Oracle Identity Cloud Service (IDCS) with existing enterprise applications by wiring identity and authentication APIs, delivering centralised single sign-on."
+      - "Identified and remediated 65+ security vulnerabilities across SAST, DAST and open-source dependency findings through secure coding and proactive library upgrades."
+      - "Resolved 70+ defects across development and test environments and 15 production issues through root-cause analysis with support teams, restoring service within SLA."
+      - "Built JUnit unit-test automation for core service methods and led peer code reviews, catching defects before release."
+      - "Developed proof-of-concept REST APIs to validate new features and integration approaches, and optimised Oracle SQL queries and stored procedures to improve response times and stability."
+      - "Supported CI/CD pipelines and deployments to development and test environments, and authored HLD/LLD documents and API specifications."
+
+projects:
+  - name: "Muraqib - Agentic AI Governance & Compliance Assessment Platform"
+    url: "https://github.com/leelakrishna288/muraqib"
+    stack: "Python, FastAPI, MCP, RAG (BM25 + dense), Chroma/pgvector, Pydantic, OAuth2.1/OIDC, Docker, GitHub Actions, pytest"
+    label: VERIFIED
+    shipped: false   # flip to true once pushed; the gate blocks the URL until then
+    bullets:
+      - "Built an end-to-end agentic system assessing an AI platform against 121 controls across eight governance instruments, producing coverage, a deterministic risk tier and a de-duplicated remediation plan."
+      - "Designed a six-node orchestrator as an explicit state graph with checkpointing and resume; only two of six nodes call a model, keeping the rest deterministic and auditable."
+      - "Implemented an MCP server (JSON-RPC 2.0 over stdio, six tools) so any MCP client can drive an assessment."
+      - "Built hybrid BM25 + dense retrieval with a labelled recall benchmark enforced in CI."
+      - "Engineered four layers of prompt-injection defence and a citation gate that makes hallucination lower the score rather than hide in it."
+      - "Built a five-metric evaluation harness gating CI; its first run exposed three real defects, fixed rather than threshold-lowered."
+      - "Implemented a hash-chained append-only audit ledger with a verification command."
+      - "Secured the service with OAuth 2.1 / OIDC JWKS verification and role inheritance; provider-agnostic across six LLM providers with hard per-run call and cost ceilings."
+
+  - name: "AI Career Agent - MCP-driven job analysis and resume tailoring"
+    url: "https://github.com/leelakrishna288/ai-career-agent"
+    stack: "Python, MCP, Pydantic, pytest, GitHub Actions"
+    label: VERIFIED
+    shipped: false
+    bullets:
+      - "Built an MCP server exposing deterministic tools - a weighted job-match scoring rubric with hard-reject rules, an ATS-oriented resume generator behind a factual-validation gate, and an append-safe application tracker."
+      - "Enforced a validation gate that blocks any generated resume containing a claim not present in the master profile, so tailoring can never introduce a fabricated skill, employer, metric or certification."
+
+  - name: "Employee Management REST API"
+    url: ""
+    stack: "Java, Spring Boot, REST, Oracle, JUnit"
+    label: PARTIALLY_VERIFIED
+    shipped: false
+    bullets:
+      - "Built a backend service exposing secured REST endpoints to manage employee records, with input validation to mitigate SQL injection and common web vulnerabilities."
+      - "Modelled the relational schema, wrote optimised Oracle SQL, and added JUnit tests covering core behaviour."
+
+certifications:
+  - "AWS Certified Cloud Practitioner - Amazon Web Services"
+  - "Cloud Digital Leader - Google Cloud"
+  - "Microsoft Certified: Azure AI Fundamentals (AI-900)"
+  - "Microsoft Certified: Azure Fundamentals (AZ-900)"
+  - "Microsoft Certified: Security, Compliance and Identity Fundamentals (SC-900)"
+  - "Microsoft Certified: Azure Data Fundamentals (DP-900)"
+  - "Microsoft Certified: Power Platform Fundamentals (PL-900)"
+  - "Microsoft 365 Certified: Fundamentals (MS-900)"
+
+education:
+  - "B.Tech, Computer Science Engineering - SRK Institute of Technology, Vijayawada (Jun 2017 - Jul 2021), GPA 7.8/10"
