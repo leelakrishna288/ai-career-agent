@@ -339,6 +339,19 @@ skills:
   evidence: Muraqib pgvector store implementation; no production Postgres ownership
   aliases:
   - postgres
+- name: BM25
+  label: VERIFIED
+  evidence: 'Muraqib: Okapi BM25 implemented from scratch, no dependency'
+  aliases:
+  - lexical retrieval
+  - okapi bm25
+- name: Hybrid retrieval
+  label: VERIFIED
+  evidence: 'Muraqib: min-max normalised score fusion of BM25 and dense vectors, weight measured by a benchmark'
+  aliases:
+  - score fusion
+  - hybrid search
+  - rag - hybrid bm25 + dense retrieval, score fusion
 experience:
 - employer: Accenture
   title: Custom Software Engineering Analyst
