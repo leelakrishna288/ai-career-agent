@@ -24,8 +24,13 @@ jobs:
           ruff check src tests
           ruff format --check src tests
       - name: Type check
-        run: mypy src/career_agent || true
+        run: mypy src/career_agent
       - name: Test
         run: pytest --cov=src/career_agent --cov-report=term
       - name: Security
         run: bandit -r src/career_agent -ll
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip freeze --exclude-editable > /tmp/requirements.lock
+          pip-audit -r /tmp/requirements.lock --strict
