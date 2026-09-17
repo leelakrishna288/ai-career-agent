@@ -156,6 +156,10 @@ CRITICAL = {
 }
 
 
+def _contains_term(text: str, term: str) -> bool:
+    return re.search(rf"(?<![\w#+]){re.escape(term)}(?![\w#+])", text) is not None
+
+
 def _norm(term: str) -> str:
     return re.sub(r"\s+", " ", term.strip().lower())
 
@@ -317,7 +321,10 @@ class Scorer:
         text = " ".join(
             [job.role, job.description, *job.required_skills, *job.preferred_skills]
         ).lower()
-        present = {t for t in vocab if t in text}
+        # Whole-term matching: substring matching let "agent" fire on
+        # "management" and "rag" on "leverage", giving plain Java roles full AI
+        # relevance. Found by running the scorer over live postings.
+        present = {t for t in vocab if _contains_term(text, t)}
         if not present:
             return 0.0
         covered = sum(
@@ -359,7 +366,7 @@ class Scorer:
             "architecture",
             "ownership",
         )
-        hits = sum(1 for s in signals if s in text)
+        hits = sum(1 for s in signals if _contains_term(text, s))
         return round(MAX_POINTS["growth"] * min(1.0, 0.4 + 0.15 * hits), 2)
 
     @staticmethod

@@ -191,6 +191,69 @@ def pipeline(
         console.print(f"CSV written to {t.export_csv(export)}")
 
 
+@app.command()
+def discover(
+    config_path: Path = typer.Option(Path("config/discovery.yaml"), "--config", "-c"),
+    profile_path: Path = typer.Option(None, "--profile", "-p"),
+    notion: bool = typer.Option(False, "--notion", help="Write new rows to the Notion tracker"),
+    report_dir: Path = typer.Option(Path("reports"), "--report-dir"),
+    public_summary: Path = typer.Option(
+        None, "--public-summary", help="Also write a counts-only summary (safe for public CI logs)"
+    ),
+) -> None:
+    """Standalone discovery: public ATS boards -> gates -> score -> tracker.
+
+    Needs no LLM. With --notion, reads NOTION_TOKEN, NOTION_DATA_SOURCE_ID and
+    (optionally) NOTION_REPORT_PAGE_ID from the environment.
+    """
+    import logging
+    import os
+    from datetime import date
+
+    from .discovery.http import UrllibJsonClient
+    from .discovery.notion_sink import MemorySink, NotionTrackerSink, render_report
+    from .discovery.pipeline import DiscoveryConfig, run_discovery
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    cfg = DiscoveryConfig.load(config_path)
+    client = UrllibJsonClient()
+    sink: NotionTrackerSink | MemorySink
+    if notion:
+        try:
+            sink = NotionTrackerSink(
+                client,
+                os.environ.get("NOTION_TOKEN", ""),
+                os.environ.get("NOTION_DATA_SOURCE_ID", ""),
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from None
+    else:
+        sink = MemorySink()
+        console.print("[yellow]Dry run: nothing is written to Notion (use --notion).[/yellow]")
+
+    report = run_discovery(cfg, load_profile(profile_path), client, sink)
+    markdown = render_report(report)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    out = report_dir / f"discovery_{date.today().isoformat()}.md"
+    out.write_text(markdown, encoding="utf-8")
+    console.print(markdown)
+    if public_summary:
+        public_summary.write_text(render_report(report, public=True), encoding="utf-8")
+    page_id = os.environ.get("NOTION_REPORT_PAGE_ID", "")
+    if notion and page_id and isinstance(sink, NotionTrackerSink):
+        try:
+            url = sink.write_report(page_id, f"Standalone discovery — {report.run_date}", markdown)
+            console.print(f"Notion report page: {url}")
+        except Exception as exc:  # the rows are already written; do not fail the run
+            console.print(f"[red]Could not write the Notion report page: {exc}[/red]")
+    if report.boards_ok == 0:
+        console.print("[red]Every board failed - see the report.[/red]")
+        raise typer.Exit(1)
+    if report.write_errors:
+        raise typer.Exit(1)
+
+
 def main() -> None:  # pragma: no cover
     app()
 

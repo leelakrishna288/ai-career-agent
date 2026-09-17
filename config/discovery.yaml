@@ -1,0 +1,98 @@
+# Standalone discovery configuration.
+# Board tokens come from the employers' own ATS URLs already seen in the tracker:
+#   job-boards.greenhouse.io/<token>/...   jobs.lever.co/<token>/...   jobs.ashbyhq.com/<token>/...
+# A board that 404s is reported and skipped; the run continues.
+
+boards:
+  # Greenhouse (aiserajobs removed 2026-09-17: board returns 404)
+  - { platform: greenhouse, token: bswiftindia, company: bswift India }
+  - { platform: greenhouse, token: redwoodsoftware, company: Redwood Software }
+  - { platform: greenhouse, token: globalhealthcareexchangeinc, company: GHX }
+  - { platform: greenhouse, token: gitlab, company: GitLab }
+  - { platform: greenhouse, token: pay2dc, company: PayPay India }
+  - { platform: greenhouse, token: fourkites, company: FourKites }
+  - { platform: greenhouse, token: addepar1, company: Addepar }
+  - { platform: greenhouse, token: celonis, company: Celonis }
+  - { platform: greenhouse, token: razorpaysoftwareprivatelimited, company: Razorpay }
+  - { platform: greenhouse, token: conga, company: Conga }
+  - { platform: greenhouse, token: dscout, company: Dscout }
+  - { platform: greenhouse, token: lynxanalytics, company: Lynx Analytics }
+  - { platform: greenhouse, token: capco, company: Capco }
+  - { platform: greenhouse, token: gleanwork, company: Glean }
+  - { platform: greenhouse, token: dialpad, company: Dialpad }
+  - { platform: greenhouse, token: commvault, company: Commvault }
+  - { platform: greenhouse, token: ensono, company: Ensono }
+  - { platform: greenhouse, token: sigmoid, company: Sigmoid }
+  - { platform: greenhouse, token: xebiacee, company: Xebia }
+  - { platform: greenhouse, token: instead, company: Instead }
+  # Lever
+  - { platform: lever, token: termgrid, company: Termgrid }
+  - { platform: lever, token: zimperium, company: Zimperium }
+  - { platform: lever, token: Onehouse, company: Onehouse }
+  - { platform: lever, token: netomi, company: Netomi }
+  - { platform: lever, token: binance, company: Binance }
+  - { platform: lever, token: tala, company: Tala }
+  # Ashby (the Claude run could not read these JavaScript-only pages; the API works)
+  - { platform: ashby, token: trm-labs, company: TRM Labs }
+  - { platform: ashby, token: credo.ai, company: Credo AI }
+  - { platform: ashby, token: furtherai, company: FurtherAI }
+
+# Target role families (title must match at least one).
+include_titles:
+  - software engineer
+  - software developer
+  - backend
+  - back end
+  - back-end
+  - java
+  - api engineer
+  - ai engineer
+  - genai
+  - generative ai
+  - llm
+  - agentic
+  - ml engineer
+  - machine learning engineer
+  - applied ai
+  - ai application
+  - ai platform
+  - platform engineer
+  - integration engineer
+  - automation engineer
+  - sde
+  - member of technical staff
+
+# Never relevant at 4.7 years / for this career direction.
+exclude_titles:
+  - principal
+  - staff
+  - director
+  - head
+  - vp
+  - manager
+  - architect
+  - intern
+  - sales
+  - account
+  - recruiter
+  - designer
+  - frontend
+  - front end
+  - ios
+  - android
+  - qa
+  - test engineer
+  - testing
+  - sdet
+  - selenium
+  - full stack
+  - fullstack
+  - data scientist
+  - site reliability
+
+# Work authorisation: roles outside these are skipped BEFORE scoring
+# (remote-worldwide roles are always kept).
+allowed_countries: [India, UAE, Qatar, Saudi Arabia]
+max_posting_age_days: 45
+max_new_per_run: 40
+max_new_per_company: 6

@@ -48,6 +48,15 @@ cannot trace back.
 
 ---
 
+
+## Standalone daily discovery (no LLM required)
+
+`career-agent discover` pulls employers' public Greenhouse / Lever / Ashby job
+boards, gates on title, freshness and work authorisation, deduplicates, scores
+with the deterministic rubric and writes to a Notion tracker. A GitHub Actions
+schedule runs it daily. Setup and verification notes:
+[docs/STANDALONE_RUNTIME.md](docs/STANDALONE_RUNTIME.md).
+
 ## Evidence labels
 
 Every skill is recorded with how well it is actually supported:

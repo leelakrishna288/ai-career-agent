@@ -80,3 +80,22 @@ class TestScoring:
     def test_no_stated_skills_does_not_crash(self, profile):
         result = Scorer(profile).score(JobPosting(company="X", role="AI Engineer"))
         assert result.score > 0
+
+
+def test_ai_relevance_uses_whole_terms(profile):
+    from career_agent.models import JobPosting
+    from career_agent.scoring import Scorer
+
+    plain = JobPosting(
+        company="X",
+        role="Java Developer",
+        description="Leverage change management and storage for our Java platform.",
+    )
+    ai = JobPosting(
+        company="X",
+        role="Java Developer",
+        description="Build RAG pipelines and agent tooling on our Java platform.",
+    )
+    s = Scorer(profile)
+    assert s.score(plain).breakdown.ai_relevance == 0.0
+    assert s.score(ai).breakdown.ai_relevance > 0.0
