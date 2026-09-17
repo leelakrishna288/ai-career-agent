@@ -1,0 +1,69 @@
+name: Tracker backup
+
+# Backs up the Notion Application Tracker into this repository as CSV + raw JSON.
+# Notion is currently the only copy of the application history (SYSTEM_SPEC v1.8 §13.6).
+#
+# Runs 23:10 UTC = 04:40 IST, ~35 min BEFORE the 05:15 IST discovery run, so each
+# snapshot is a clean pre-run state. Read-only against Notion.
+#
+# Secret required: NOTION_TOKEN (already set).
+# Side effect: the daily commit also keeps scheduled workflows out of the ~60-day
+# repository-inactivity shutdown.
+
+on:
+  schedule:
+    - cron: "10 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tracker-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Export the tracker
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: python scripts/notion_tracker_backup.py
+
+      - name: Commit the snapshot
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain backups/tracker)" ]; then
+            echo "No change since the last snapshot; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backups/tracker
+          git commit -m "chore(backup): tracker snapshot $(date -u +%Y-%m-%d)"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Tracker backup"
+            echo ""
+            if [ -f backups/tracker/latest.csv ]; then
+              echo "- Rows: $(($(wc -l < backups/tracker/latest.csv) - 1))"
+              echo "- Snapshot: \`backups/tracker/tracker_$(date -u +%Y-%m-%d).csv\`"
+            else
+              echo "- No snapshot produced — check the export step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
