@@ -1,0 +1,162 @@
+name: Runtime watchdog
+
+# Purpose (cloud-only; runs with Leela's laptop off):
+#  1. Detects a "Daily job discovery" run that failed or never fired, and files a
+#     GitHub issue so the failure is visible without reading logs on the laptop.
+#  2. Keeps the scheduled trigger alive: GitHub disables scheduled workflows after
+#     ~60 days of repository inactivity. A heartbeat commit is attempted at 45 days,
+#     and an issue is filed as the guaranteed fallback.
+#
+# No new secrets. Uses the automatic GITHUB_TOKEN only.
+# Discovery runs at 05:15 IST = 23:45 UTC the previous day; this checks at 01:30 UTC
+# (07:00 IST), ~1h45m later.
+
+on:
+  schedule:
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+
+concurrency:
+  group: runtime-watchdog
+  cancel-in-progress: false
+
+env:
+  WATCHED_WORKFLOW: "Daily job discovery"
+  MAX_RUN_AGE_HOURS: "26"
+  HEARTBEAT_AFTER_DAYS: "45"
+  HEARTBEAT_FILE: ".github/heartbeat"
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the last discovery run
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          runs_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?per_page=50" \
+            --jq '[.workflow_runs[] | {name, status, conclusion, created_at, html_url, event}]')"
+
+          latest="$(printf '%s' "$runs_json" | jq -c --arg n "$WATCHED_WORKFLOW" \
+            '[.[] | select(.name == $n)] | sort_by(.created_at) | last // empty')"
+
+          if [ -z "$latest" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "detail=No run of \"$WATCHED_WORKFLOW\" exists in the last 50 runs." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+          created="$(printf '%s' "$latest" | jq -r '.created_at')"
+          status="$(printf '%s' "$latest" | jq -r '.status')"
+          conclusion="$(printf '%s' "$latest" | jq -r '.conclusion // "none"')"
+          url="$(printf '%s' "$latest" | jq -r '.html_url')"
+
+          age_h=$(( ( $(date -u +%s) - $(date -u -d "$created" +%s) ) / 3600 ))
+
+          echo "run_url=$url" >> "$GITHUB_OUTPUT"
+
+          if [ "$age_h" -gt "$MAX_RUN_AGE_HOURS" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "detail=Newest run is ${age_h}h old (limit ${MAX_RUN_AGE_HOURS}h). Status ${status}/${conclusion}. The schedule may be disabled." >> "$GITHUB_OUTPUT"
+          elif [ "$status" != "completed" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "detail=Newest run (${age_h}h old) is still ${status}. A run that has not completed in ${age_h}h is stuck." >> "$GITHUB_OUTPUT"
+          elif [ "$conclusion" != "success" ]; then
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+            echo "detail=Newest run (${age_h}h old) concluded ${conclusion}." >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            echo "detail=Newest run succeeded ${age_h}h ago." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report an unhealthy runtime
+        if: steps.check.outputs.healthy != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DETAIL: ${{ steps.check.outputs.detail }}
+          RUN_URL: ${{ steps.check.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          title="Runtime watchdog: daily discovery is not healthy"
+          existing="$(gh issue list --state open --label runtime-watchdog --limit 1 --json number --jq '.[0].number // empty')"
+          body="$(printf '%s\n\nChecked: %s UTC\nLast run: %s\n\nNext steps: open the run log, then check Notion "Daily Reports" for today. If the schedule was disabled for inactivity, re-enable it under Actions and push any commit.' \
+            "$DETAIL" "$(date -u +'%Y-%m-%d %H:%M')" "${RUN_URL:-none}")"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create runtime-watchdog --color B60205 --description "Automated runtime health alerts" 2>/dev/null || true
+            gh issue create --title "$title" --label runtime-watchdog --body "$body"
+          fi
+
+      - name: Close the alert when healthy again
+        if: steps.check.outputs.healthy == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DETAIL: ${{ steps.check.outputs.detail }}
+        run: |
+          set -euo pipefail
+          for n in $(gh issue list --state open --label runtime-watchdog --json number --jq '.[].number'); do
+            gh issue comment "$n" --body "Recovered: $DETAIL"
+            gh issue close "$n"
+          done
+
+      - name: Heartbeat so the schedule is not disabled for inactivity
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          last_commit_epoch="$(git log -1 --format=%ct)"
+          days=$(( ( $(date -u +%s) - last_commit_epoch ) / 86400 ))
+          echo "Last commit was ${days} day(s) ago."
+
+          if [ "$days" -lt "$HEARTBEAT_AFTER_DAYS" ]; then
+            echo "No heartbeat needed."
+            exit 0
+          fi
+
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > "$HEARTBEAT_FILE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$HEARTBEAT_FILE"
+          git commit -m "chore: watchdog heartbeat (repository inactive ${days}d)"
+
+          if git push; then
+            echo "Heartbeat commit pushed."
+          else
+            echo "Heartbeat push FAILED."
+          fi
+
+          # A bot commit may not reset GitHub's inactivity counter. Ask for a human commit too.
+          gh label create runtime-watchdog --color B60205 --description "Automated runtime health alerts" 2>/dev/null || true
+          gh issue create \
+            --title "Push a commit: scheduled workflows are disabled after ~60 days of inactivity" \
+            --label runtime-watchdog \
+            --body "The repository has had no commit for ${days} days. GitHub disables scheduled workflows after about 60 days of repository inactivity, which would silently stop the daily discovery run. A heartbeat commit was attempted; whether a bot commit resets the counter is UNCERTAIN, so please push any human commit (or re-enable the workflow under Actions) before day 60."
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "### Runtime watchdog"
+            echo ""
+            echo "- Watched workflow: ${WATCHED_WORKFLOW}"
+            echo "- Healthy: ${{ steps.check.outputs.healthy }}"
+            echo "- Detail: ${{ steps.check.outputs.detail }}"
+          } >> "$GITHUB_STEP_SUMMARY"
