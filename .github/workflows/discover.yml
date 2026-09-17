@@ -1,8 +1,12 @@
 name: Daily job discovery
 
-# Runs in GitHub's cloud, so it works while the laptop is off.
-# 23:45 UTC = 05:15 IST, before the Claude daily run at 06:00 IST picks up
-# the new rows for company checks and resume tailoring.
+# Runs in GitHub's cloud: works while the laptop is off and needs no Claude.
+# 23:45 UTC = 05:15 IST, before the Claude daily run at 06:00 IST.
+# What it does: company ATS boards, remote-job boards, public Telegram
+# channels and job blogs -> gates -> score -> Notion tracker; tailored resume
+# (DOCX + text) with an ESTIMATED ATS on each new match; government IT jobs
+# -> Govt Job Tracker; one digest page in Notion "Daily Reports" and an email.
+# It never submits an application.
 on:
   schedule:
     - cron: "45 23 * * *"
@@ -18,7 +22,7 @@ concurrency:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,21 +32,34 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATA_SOURCE_ID: ${{ vars.NOTION_DATA_SOURCE_ID }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ -z "$NOTION_TOKEN" ] || [ -z "$NOTION_DATA_SOURCE_ID" ]; then
             echo "::error::Set the NOTION_TOKEN secret and the NOTION_DATA_SOURCE_ID variable (see docs/STANDALONE_RUNTIME.md)"
             exit 1
           fi
-      - name: Discover, score and record
+          if [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "::warning::No GMAIL_APP_PASSWORD secret: the digest goes to Notion only (see docs/STANDALONE_RUNTIME.md)"
+          fi
+      - name: Discover, tailor, record and send the digest
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATA_SOURCE_ID: ${{ vars.NOTION_DATA_SOURCE_ID }}
-          NOTION_REPORT_PAGE_ID: ${{ vars.NOTION_REPORT_PAGE_ID }}
-        # The repository is public, so only the counts-only summary goes to the
-        # job log. Company names, roles and scores stay in Notion.
+          # Optional overrides; config/discovery.yaml holds the defaults.
+          NOTION_GOVT_DATA_SOURCE_ID: ${{ vars.NOTION_GOVT_DATA_SOURCE_ID }}
+          NOTION_DIGEST_PAGE_ID: ${{ vars.NOTION_DIGEST_PAGE_ID }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+          GOOGLE_SAFE_BROWSING_KEY: ${{ secrets.GOOGLE_SAFE_BROWSING_KEY }}
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+        # The repository is public, so only a counts-only summary reaches the
+        # job log. Companies, roles, scores and resumes stay in Notion/email;
+        # resume files are never written to the runner's disk.
         run: |
-          career-agent discover --notion --report-dir /tmp/reports \
+          career-agent daily --notion --email --out /tmp/reports \
             --public-summary /tmp/public_summary.md > /tmp/run.log 2>&1 || status=$?
           cat /tmp/public_summary.md >> "$GITHUB_STEP_SUMMARY" || true
           grep -E "^(INFO|WARNING|ERROR)" /tmp/run.log | sed -E 's#(https?://)[^ ]+#\1<redacted>#g' || true
+          grep -E "^(Notion digest page|Digest emailed|Email skipped)" /tmp/run.log | sed -E 's#(https?://)[^ ]+#\1<redacted>#g' || true
           exit ${status:-0}

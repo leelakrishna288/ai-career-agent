@@ -18,7 +18,8 @@ from .extract import Extracted, to_job_posting
 from .filters import compile_any, reachable, title_relevant
 from .http import JsonClient
 from .locations import PRACTICE, LocationTiers
-from .sources import AGGREGATORS, Board, RawPosting, fetch_board
+from .sources import AGGREGATORS, COMMUNITY, Board, RawPosting, fetch_board
+from .telegram import FRESHER_ONLY
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,17 @@ class BoardConfig(BaseModel):
     platform: str
     token: str
     company: str
+
+
+class GovtWatch(BaseModel):
+    org: str
+    url: str
+    cs_org: bool = False  # the organisation only hires in computing, so any recruitment link counts
+
+
+class NotionTargets(BaseModel):
+    report_page_id: str = ""
+    govt_data_source_id: str = ""
 
 
 class DiscoveryConfig(BaseModel):
@@ -56,6 +68,15 @@ class DiscoveryConfig(BaseModel):
     )
     target_locations: list[str] = Field(default_factory=list)
     practice_locations: list[str] = Field(default_factory=list)
+    # Resume and submission gates (Leela, 2026-09-17).
+    min_ats: float = 90.0
+    auto_submit_min_match: float = 80.0
+    max_resumes_per_run: int = 10
+    # Government IT jobs (separate tracker).
+    govt_watch: list[GovtWatch] = Field(default_factory=list)
+    max_govt_new_per_run: int = 25
+    # Notion targets that are not secret (page/data-source ids).
+    notion: NotionTargets = Field(default_factory=lambda: NotionTargets())
 
     @classmethod
     def load(cls, path: Path | str) -> DiscoveryConfig:
@@ -102,6 +123,11 @@ class RunReport:
     # (company, role, score, decision, url, work mode, purpose)
     recorded: list[tuple[str, str, float, str, str, str, str]] = field(default_factory=list)
     write_errors: list[str] = field(default_factory=list)
+    fresher_only: int = 0
+    govt_leads: list[RawPosting] = field(default_factory=list)
+    community_manual: int = 0
+    # (record, tracker page id or url) for the resume stage and the digest
+    records: list[tuple[NewRecord, str]] = field(default_factory=list)
 
     def counts(self, decision: str) -> int:
         return sum(1 for r in self.recorded if r[3] == decision)
@@ -197,8 +223,14 @@ def run_discovery(
             continue
         report.boards_ok += 1
         report.fetched += len(postings)
+        community = board.platform in COMMUNITY
         for raw in postings:
-            ok, _ = title_relevant(raw.title, include, exclude)
+            if raw.category == "govt":
+                report.govt_leads.append(raw)
+                continue
+            # Community posts were already classified by role family; their
+            # guessed titles are too noisy for the include list.
+            ok, _ = title_relevant(raw.title, None if community else include, exclude)
             if not ok or not raw.title:
                 report.irrelevant_title += 1
                 continue
@@ -209,6 +241,12 @@ def run_discovery(
                 report.too_old += 1
                 continue
             ex = to_job_posting(raw)
+            if (
+                FRESHER_ONLY.search(f"{raw.title}\n{raw.description[:3000]}")
+                and ex.job.min_years < 2
+            ):
+                report.fresher_only += 1
+                continue
             reach, reach_note = reachable(ex, allowed)
             if not reach:
                 report.unreachable += 1
@@ -219,7 +257,15 @@ def run_discovery(
             seen_this_run.append(
                 ExistingKey(ex.job.company, normalise_role(ex.job.role), raw.url, raw.external_id)
             )
-            candidates.append((scorer.score(ex.job), ex, raw, reach_note))
+            analysis = scorer.score(ex.job)
+            # A community post is a lead, not a job description: it always goes
+            # to review until the employer's own posting is read.
+            if (raw.source_url or raw.safety) and analysis.decision in (
+                Decision.APPLY,
+                Decision.MAYBE,
+            ):
+                analysis = analysis.model_copy(update={"decision": Decision.MANUAL_REVIEW})
+            candidates.append((analysis, ex, raw, reach_note))
 
     # Best matches first, so the per-run cap never drops a strong role in
     # favour of a weak one, and no single large employer floods the tracker.
@@ -234,12 +280,19 @@ def run_discovery(
             report.capped += 1
             continue
         purpose = tiers.purpose(ex)
-        origin = (
-            f"Discovered by the standalone runtime via {raw.platform} (listing: {raw.url}). "
-            "Apply on the employer's own site where the listing links to one."
-            if raw.platform.lower() in AGGREGATORS
-            else "Discovered by the standalone runtime from the employer's public ATS API."
-        )
+        if raw.source_url:
+            origin = (
+                f"Lead from {raw.source_name or raw.platform} ({raw.source_url}); "
+                f"source trust {raw.source_trust or 'n/a'}; {raw.safety}. "
+                "Verify the employer page, company and eligibility before applying."
+            )
+        elif raw.platform.lower() in AGGREGATORS:
+            origin = (
+                f"Discovered by the standalone runtime via {raw.platform} (listing: {raw.url}). "
+                "Apply on the employer's own site where the listing links to one."
+            )
+        else:
+            origin = "Discovered by the standalone runtime from the employer's public ATS API."
         notes = "; ".join(
             x
             for x in (
@@ -259,11 +312,14 @@ def run_discovery(
             purpose=purpose,
         )
         try:
-            sink.add(record)
+            ref = sink.add(record)
         except Exception as exc:
             report.write_errors.append(f"{ex.job.company} / {ex.job.role}: {exc}")
             continue
         per_company[key] = per_company.get(key, 0) + 1
+        report.records.append((record, ref or ""))
+        if analysis.decision == Decision.MANUAL_REVIEW and raw.source_url:
+            report.community_manual += 1
         report.recorded.append(
             (
                 ex.job.company,

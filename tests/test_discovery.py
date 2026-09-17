@@ -304,6 +304,8 @@ def test_config_loads_shipped_file(repo_root):
         "ashby",
         "himalayas",
         "remotive",
+        "telegram",
+        "jobsite",
     }
     assert sum(b.platform == "remotive" for b in cfg.boards) == 1  # Remotive: <=4 fetches/day
     assert "pune" in cfg.practice_locations and "hyderabad" in cfg.target_locations

@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def server(tmp_path):
-    return CareerAgentMCPServer(ROOT / "profile" / "master_profile.yaml", tmp_path / "apps.jsonl")
+    return CareerAgentMCPServer(
+        ROOT / "tests" / "fixtures" / "profile_fixture.yaml", tmp_path / "apps.jsonl"
+    )
 
 
 def call(server, name, args=None):

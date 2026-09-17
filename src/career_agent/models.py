@@ -121,6 +121,11 @@ class MasterProfile(BaseModel):
     certifications: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
     summary_sentences: list[str] = Field(default_factory=list)
+    # Pre-approved headline variants keyed by role family ("ai", "backend").
+    headlines: dict[str, str] = Field(default_factory=dict)
+    # Pre-approved opening sentence per role family; the rest of the summary
+    # comes from summary_sentences.
+    summary_openers: dict[str, str] = Field(default_factory=dict)
     notice_period_days: int = 0
     current_ctc_lpa: float | None = None
     expected_ctc_lpa: float | None = None
@@ -143,6 +148,7 @@ class MasterProfile(BaseModel):
         for p in self.projects:
             parts += [p.name, p.url, p.stack, *p.bullets]
         parts += self.certifications + self.education + self.summary_sentences
+        parts += list(self.headlines.values()) + list(self.summary_openers.values())
         return " \n".join(x for x in parts if x).lower()
 
 
@@ -379,6 +385,16 @@ class ValidationResult(BaseModel):
         return [i for i in self.issues if i.severity == "blocking"]
 
 
+class ATSEstimate(BaseModel):
+    """ESTIMATED ATS compatibility (SYSTEM_SPEC 7). Never a real ATS score."""
+
+    total: float
+    components: dict[str, float] = Field(default_factory=dict)
+    missing_required: list[str] = Field(default_factory=list)
+    missing_preferred: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class TailoredResume(BaseModel):
     resume_id: str
     version: int = 1
@@ -397,10 +413,18 @@ class TailoredResume(BaseModel):
     keywords_targeted: list[str] = Field(default_factory=list)
     changes: list[str] = Field(default_factory=list)
     validation: ValidationResult | None = None
+    ats: ATSEstimate | None = None
 
     @property
     def is_final(self) -> bool:
+        """Factual gate only. Use `ready(min_ats)` for the submission gate."""
         return bool(self.validation and self.validation.passed)
+
+    def ready(self, min_ats: float = 90.0) -> bool:
+        """Submission gate: every claim traceable AND the ATS estimate reaches
+        the minimum. A resume below the minimum is never raised to it by adding
+        claims - the job is sent to Leela instead."""
+        return self.is_final and bool(self.ats and self.ats.total >= min_ats)
 
 
 class Application(BaseModel):

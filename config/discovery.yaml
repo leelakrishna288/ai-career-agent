@@ -46,6 +46,26 @@ boards:
   - { platform: himalayas, token: "java|", company: Himalayas }
   - { platform: himalayas, token: "ai engineer|", company: Himalayas }
   - { platform: remotive, token: software-dev, company: Remotive }
+  # Public Telegram channels (read through the t.me/s web preview; no login).
+  # Each lead carries the channel's subscriber count / last-post date and a
+  # link-safety verdict; posts with payment/"exam help" wording or unsafe
+  # links are dropped. Checked 2026-09-17: subscribers in brackets.
+  - { platform: telegram, token: offcampusjobsindia_IT, company: Off Campus Jobs India }  # 99.6K (Leela)
+  - { platform: telegram, token: offcampusjobs_4u, company: Off Campus Jobs group }       # 66K members, GROUP: no public preview, reported as unreadable (Leela)
+  - { platform: telegram, token: experiencedjobs, company: Experienced Job Posts }        # 672 - LOW trust label
+  - { platform: telegram, token: offcampusjobs4u, company: OffCampusJobs4u }              # 67.3K
+  - { platform: telegram, token: kickcharm, company: KickCharm }                          # 110K
+  - { platform: telegram, token: gocareers, company: Go Careers }                         # 79.4K
+  - { platform: telegram, token: dot_aware, company: DotAware }                           # 42.8K
+  - { platform: telegram, token: jobs_and_internships_updates, company: Krishan Kumar Jobs }  # 198K
+  - { platform: telegram, token: govtjobs9, company: All Government Jobs }                # 74.9K (govt)
+  - { platform: telegram, token: governmentalerts, company: Government Jobs Alerts }       # 61.6K (govt)
+  # Job blogs that publish schema.org JobPosting data and allow crawling
+  # (robots.txt checked on every run). Their "apply on company website" link
+  # becomes the Job URL.
+  - { platform: jobsite, token: "https://www.offcampusjobsindia.com/category/it-jobs", company: offcampusjobsindia.com }  # Leela
+  - { platform: jobsite, token: "https://www.offcampusjobsindia.com/remote-jobs", company: offcampusjobsindia.com }
+  - { platform: jobsite, token: "https://www.offcampusjobsindia.com/jobs?q=java", company: offcampusjobsindia.com }
 
 # Target role families (title must match at least one).
 include_titles:
@@ -118,6 +138,55 @@ target_locations:
 practice_locations:
   [pune, mumbai, navi mumbai, thane, gurgaon, gurugram, noida, greater noida,
    delhi, new delhi, delhi ncr, ncr, faridabad, ghaziabad, kolkata]
+
+# Resume gate: a tailored resume is READY only when the validation gate passes
+# AND the ESTIMATED ATS is at least min_ats. The laptop auto-submit rule also
+# needs match >= auto_submit_min_match and a GENUINE company (SYSTEM_SPEC 11a).
+min_ats: 90
+auto_submit_min_match: 80
+max_resumes_per_run: 10
+
+# Non-secret Notion targets (ids are not credentials; the token stays a secret).
+notion:
+  report_page_id: 3debe82c-b558-8160-904f-caf9085ed447   # "Daily Reports"
+  govt_data_source_id: 192bff6e-d861-435a-a90f-777f2571d0b5  # "Govt Job Tracker"
+
+# Government IT jobs: official recruitment pages checked daily for NEW links
+# that mention this or next year and a CS/IT signal (cs_org: every recruitment
+# link counts). Bank posts are excluded. Unreachable pages are reported only.
+max_govt_new_per_run: 25
+govt_watch:
+  - { org: BHEL, url: "https://careers.bhel.in/" }
+  - { org: BEL, url: "https://bel-india.in/job-notifications/" }
+  - { org: ECIL, url: "https://www.ecil.co.in/job_details.php" }
+  - { org: C-DAC, url: "https://www.cdac.in/index.aspx?id=current_jobs", cs_org: true }
+  - { org: C-DAC careers, url: "https://careers.cdac.in/", cs_org: true }
+  - { org: NIELIT, url: "https://www.nielit.gov.in/recruitments", cs_org: true }
+  - { org: NIC, url: "https://recruitment.nic.in/", cs_org: true }
+  - { org: ISRO, url: "https://www.isro.gov.in/Careers.html" }
+  - { org: DRDO, url: "https://drdo.gov.in/drdo/en/offerings/vacancies" }
+  - { org: CRIS, url: "https://cris.org.in/loadpage?page=indexcareer", cs_org: true }
+  - { org: STPI, url: "https://stpi.in/en/careers", cs_org: true }
+  - { org: Digital India Corporation, url: "https://dic.gov.in/careers/", cs_org: true }
+  - { org: C-DOT, url: "https://www.cdot.in/cdotweb/web/current_openings.php?lang=en", cs_org: true }
+  - { org: UIDAI, url: "https://uidai.gov.in/en/about-uidai/work-with-uidai/current-vacancies.html" }
+  - { org: BECIL, url: "https://www.becil.com/Vacancies" }
+  - { org: RailTel, url: "https://www.railtel.in/careers/current-job-openings.html" }
+  - { org: AAI, url: "https://www.aai.aero/en/careers/recruitment" }
+  - { org: SEBI, url: "https://www.sebi.gov.in/sebiweb/about/AboutAction.do?doVacancies=yes" }
+  - { org: UPSC, url: "https://upsc.gov.in/recruitment/recruitment-advertisement" }
+  - { org: ESIC, url: "https://www.esic.gov.in/recruitments" }
+  - { org: CONCOR, url: "https://www.concorindia.co.in/career" }
+  - { org: NSPCL, url: "https://www.nspcl.co.in/page/10" }
+  - { org: RFCL, url: "https://www.rfcl.co.in/careers2.php" }
+  - { org: BDL, url: "https://bdl-india.in/recruitments" }
+  - { org: NTPC, url: "https://careers.ntpc.co.in/recruitment/" }
+  - { org: CSIR, url: "https://www.csir.res.in/en/career-opportunities/recruitment" }
+  - { org: CSIR-RAB, url: "https://rab.csir.res.in/recruitments.php" }
+  - { org: IIIT Hyderabad, url: "https://www.iiit.ac.in/careers/" }
+  - { org: IIT Hyderabad, url: "https://careers.iith.ac.in/" }
+  - { org: TGPSC, url: "https://websitenew.tgpsc.gov.in/directRecruitment" }
+  - { org: APPSC, url: "https://psc.ap.gov.in/" }
 
 max_posting_age_days: 45
 max_new_per_run: 40

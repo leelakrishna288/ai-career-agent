@@ -15,6 +15,7 @@ email alerts the user subscribes to.
 from __future__ import annotations
 
 import html
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ from typing import Any
 from urllib.parse import quote
 
 from .http import JsonClient
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,13 @@ class RawPosting:
     salary_text: str = ""
     extra_locations: list[str] = field(default_factory=list)
     employment_type: str = ""  # as published, e.g. "Full Time", "Contractor"
+    # Community sources (Telegram, job blogs) only:
+    category: str = ""  # "private" | "govt"
+    safety: str = ""  # safety.SafetyResult.summary()
+    safety_verdict: str = ""  # OK | CAUTION | SUSPICIOUS | DANGEROUS
+    source_trust: str = ""  # HIGH | MEDIUM | LOW + reason
+    source_url: str = ""  # the post / listing the lead came from
+    source_name: str = ""
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -257,14 +267,140 @@ def fetch_remotive(client: JsonClient, board: Board) -> list[RawPosting]:
     return out
 
 
+def fetch_telegram(client: JsonClient, board: Board) -> list[RawPosting]:
+    """Token = public channel handle. Returns private-sector leads and
+    government leads (category="govt"); skipped posts are dropped here."""
+    from datetime import date
+
+    from . import safety
+    from .telegram import (
+        channel_trust,
+        classify,
+        fields,
+        first_external_link,
+        guess_company_role,
+        parse_channel,
+        post_age_days,
+    )
+
+    get_text = getattr(client, "get_text", None)
+    if get_text is None:
+        raise ValueError("telegram source needs an HTML-capable client")
+    handle = board.token.strip().lstrip("@")
+    page = get_text(f"https://t.me/s/{quote(handle)}")
+    ch = parse_channel(handle, page)
+    if not ch.has_preview:
+        raise ValueError(
+            f"t.me/{handle} has no public preview ({ch.subscribers or '?'} {ch.kind or 'members'}); "
+            "it is a private group or has previews disabled - forward its posts to the Notion Job Inbox"
+        )
+    today = getattr(client, "today", None) or date.today()
+    level, why = channel_trust(ch, today, TELEGRAM_MIN_SUBSCRIBERS)
+    reputation = getattr(client, "reputation", None)
+    out: list[RawPosting] = []
+    for post in ch.posts:
+        if post_age_days(post, today) > TELEGRAM_MAX_AGE_DAYS:
+            continue
+        category, _ = classify(post.text)
+        if category == "skip":
+            continue
+        link = first_external_link(post)
+        if category == "private" and not link:
+            continue
+        verdict = safety.assess(link, post.text, reputation)
+        if verdict.verdict == safety.DANGEROUS:
+            continue
+        company, role = guess_company_role(post.text)
+        f = fields(post.text)
+        out.append(
+            RawPosting(
+                company=company or f"Unknown (see {post.url})",
+                title=role or post.text.splitlines()[0][:80],
+                location=f.get("location", ""),
+                url=link or post.url,
+                external_id=f"tg-{post.post_id}",
+                platform="Telegram",
+                description=post.text,
+                posted=post.day,
+                category=category,
+                safety=verdict.summary(),
+                safety_verdict=verdict.verdict,
+                source_trust=f"{level} ({why})",
+                source_url=post.url,
+                source_name=f"Telegram {ch.title or handle}",
+            )
+        )
+    return out
+
+
+def fetch_jobsite(client: JsonClient, board: Board) -> list[RawPosting]:
+    """Token = a listing page on a job blog whose robots.txt allows crawling
+    and whose job pages publish schema.org JobPosting data. Each job's own
+    "apply on company website" link becomes the Job URL."""
+    from . import safety
+    from .http import robots_allows
+    from .webjobs import detail_links, parse_detail
+
+    get_text = getattr(client, "get_text", None)
+    if get_text is None:
+        raise ValueError("jobsite source needs an HTML-capable client")
+    if not robots_allows(client, board.token):  # type: ignore[arg-type]
+        raise ValueError(f"robots.txt disallows {board.token}")
+    listing = get_text(board.token)
+    reputation = getattr(client, "reputation", None)
+    pause = getattr(client, "_sleep", None)
+    out: list[RawPosting] = []
+    for url in detail_links(board.token, listing)[:JOBSITE_MAX_DETAILS]:
+        if pause:
+            pause(1.0)  # be polite: one page a second
+        try:
+            job = parse_detail(url, get_text(url))
+        except Exception as exc:  # one bad page must not stop the listing
+            log.warning("job page %s skipped: %s", url, exc)
+            continue
+        if job is None:
+            continue
+        verdict = safety.assess(job.apply_url, job.description, reputation)
+        if verdict.verdict == safety.DANGEROUS:
+            continue
+        out.append(
+            RawPosting(
+                company=job.company,
+                title=job.title,
+                location=job.location,
+                url=job.apply_url or url,
+                external_id=f"site-{url}",
+                platform="Other",
+                description=job.description,
+                posted=_iso_date(job.posted),
+                country_hint=job.country,
+                employment_type=job.employment_type if job.employment_type != "OTHER" else "",
+                category="private",
+                safety=verdict.summary(),
+                safety_verdict=verdict.verdict,
+                source_trust="",
+                source_url=url,
+                source_name=board.company,
+            )
+        )
+    return out
+
+
+TELEGRAM_MIN_SUBSCRIBERS = 5_000
+TELEGRAM_MAX_AGE_DAYS = 3
+JOBSITE_MAX_DETAILS = 15
+
 FETCHERS = {
     "greenhouse": fetch_greenhouse,
     "lever": fetch_lever,
     "ashby": fetch_ashby,
     "himalayas": fetch_himalayas,
     "remotive": fetch_remotive,
+    "telegram": fetch_telegram,
+    "jobsite": fetch_jobsite,
 }
-AGGREGATORS = {"himalayas", "remotive"}
+AGGREGATORS = {"himalayas", "remotive", "telegram", "jobsite"}
+COMMUNITY = {"telegram", "jobsite"}
 
 
 def fetch_board(client: JsonClient, board: Board) -> list[RawPosting]:

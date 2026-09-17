@@ -11,7 +11,9 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from .ats import ATSEstimator
 from .models import (
+    Experience,
     JobAnalysis,
     JobPosting,
     MasterProfile,
@@ -34,6 +36,7 @@ class ResumeTailor:
     def __init__(self, profile: MasterProfile):
         self.profile = profile
         self.gate = ValidationGate(profile)
+        self.ats = ATSEstimator(profile)
 
     def tailor(self, job: JobPosting, analysis: JobAnalysis, version: int = 1) -> TailoredResume:
         wanted = [_norm(s) for s in job.required_skills + job.preferred_skills]
@@ -42,7 +45,7 @@ class ResumeTailor:
         skills = self._ordered_skills(wanted, changes)
         projects = self._ordered_projects(wanted, changes)
         headline = self._headline(job, changes)
-        summary = self._summary(job, analysis, changes)
+        summary = self._summary(job, analysis, changes, family=self._family(job))
 
         resume = TailoredResume(
             resume_id=resume_id(job.company, job.role, version=version),
@@ -55,13 +58,14 @@ class ResumeTailor:
             summary=summary,
             skills=skills,
             projects=projects,
-            experience=list(self.profile.experience),
+            experience=self._ordered_experience(wanted, changes),
             certifications=list(self.profile.certifications),
             education=list(self.profile.education),
             keywords_targeted=sorted({w for w in wanted if w}),
             changes=changes,
         )
         resume.validation = self.gate.validate(resume)
+        resume.ats = self.ats.estimate(job, resume)
         return resume
 
     # ------------------------------------------------------------------
@@ -102,8 +106,32 @@ class ResumeTailor:
             )
         return ordered
 
+    def _ordered_experience(self, wanted: list[str], changes: list[str]) -> list[Experience]:
+        """Same employers, same bullets - only the bullet order changes."""
+        out: list[Experience] = []
+        moved = False
+        for e in self.profile.experience:
+
+            def rel(b: str) -> int:
+                low = b.lower()
+                return sum(1 for w in wanted if w and w in low)
+
+            ordered = sorted(e.bullets, key=lambda b: -rel(b))
+            moved = moved or ordered != list(e.bullets)
+            out.append(e.model_copy(update={"bullets": ordered}))
+        if moved:
+            changes.append("Reordered experience bullets so the posting's skills come first.")
+        return out
+
     def _headline(self, job: JobPosting, changes: list[str]) -> str:
-        """Mirror the posting's own title only when the profile actually supports it."""
+        """Pick a pre-approved headline for the posting's role family."""
+        if self.profile.headlines:
+            key = self._family(job)
+            headline = self.profile.headlines.get(key) or next(
+                iter(self.profile.headlines.values())
+            )
+            changes.append(f"Used the pre-approved '{key}' headline for this role family.")
+            return headline
         base = "AI Engineer | Agentic Systems · MCP · RAG | Java Backend Foundation"
         role = job.role.lower()
         if any(
@@ -117,8 +145,26 @@ class ResumeTailor:
             return "Software Engineer | Java Backend & REST APIs | AI/LLM Application Engineering"
         return base
 
-    def _summary(self, job: JobPosting, analysis: JobAnalysis, changes: list[str]) -> str:
+    @staticmethod
+    def _family(job: JobPosting) -> str:
+        role = f" {job.role.lower()} "
+        ai_words = (" ai ", "ai-", "genai", "generative", "agentic", "llm", "ml engineer", " ai,")
+        return "ai" if any(t in role for t in ai_words) else "backend"
+
+    def _summary(
+        self, job: JobPosting, analysis: JobAnalysis, changes: list[str], family: str = ""
+    ) -> str:
         """Assemble from pre-approved sentences in the profile. Never freeform."""
+        opener = self.profile.summary_openers.get(family, "") if family else ""
+        if opener:
+            changes.append(f"Opened the summary with the pre-approved '{family}' sentence.")
+            if analysis.critical_gaps:
+                changes.append(
+                    "Did NOT add: "
+                    + ", ".join(analysis.critical_gaps)
+                    + " - these are real gaps and were left off deliberately."
+                )
+            return " ".join([opener, *self.profile.summary_sentences[:2]])
         sentences = list(self.profile.summary_sentences)
         if not sentences:
             return (

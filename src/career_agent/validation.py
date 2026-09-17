@@ -50,7 +50,7 @@ class ValidationGate:
         # and a substring check let an invented "47%" through the gate.
         self._numbers = {
             n.replace(",", "")
-            for n in re.findall(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)(?![\w.])", self._corpus)
+            for n in re.findall(r"(?<![\w.])(\d[\d,]*(?:\.\d+)?)(?!\w|\.\d)", self._corpus)
         }
         self._printable = {s.name.lower() for s in profile.printable_skills()}
         for s in profile.printable_skills():

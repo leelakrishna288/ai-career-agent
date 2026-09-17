@@ -1,4 +1,4 @@
 """AI Career Agent - deterministic job-analysis and resume-tailoring tools,
 exposed over the Model Context Protocol for an LLM agent to orchestrate."""
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"

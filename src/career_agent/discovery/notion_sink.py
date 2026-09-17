@@ -8,6 +8,7 @@ file, never a log line. The integration must be shared with the
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -175,7 +176,85 @@ class NotionTrackerSink:
             "properties": self.properties(record, date.today().isoformat()),
         }
         page = self._call("POST", "/pages", body) or {}
-        return page.get("url", "")
+        return page.get("id") or page.get("url", "")
+
+    # -- resume attachment ----------------------------------------------------
+    def update_properties(self, page_ref: str, properties: dict[str, Any]) -> None:
+        self._call("PATCH", f"/pages/{page_id_of(page_ref)}", {"properties": properties})
+
+    def append_blocks(self, page_ref: str, blocks: list[dict[str, Any]]) -> None:
+        pid = page_id_of(page_ref)
+        for i in range(0, len(blocks), 90):  # Notion accepts at most 100 children per call
+            self._call("PATCH", f"/blocks/{pid}/children", {"children": blocks[i : i + 90]})
+
+    def upload_file(self, filename: str, content: bytes, content_type: str) -> str:
+        """Notion direct upload (single part, <20 MB). Returns the file_upload id."""
+        created = (
+            self._call(
+                "POST", "/file_uploads", {"filename": filename, "content_type": content_type}
+            )
+            or {}
+        )
+        upload_id = created.get("id", "")
+        if not upload_id:
+            raise RuntimeError("Notion did not return a file upload id")
+        post = getattr(self.client, "post_multipart", None)
+        if post is None:
+            raise RuntimeError("HTTP client cannot send multipart uploads")
+        post(
+            f"{API}/file_uploads/{upload_id}/send",
+            "file",
+            filename,
+            content,
+            content_type,
+            headers=self._headers,
+        )
+        self._sleep(self._pause)
+        return upload_id
+
+    def pending_rows(self, since: str, limit: int = 20) -> list[dict[str, str]]:
+        """Rows waiting for an application, newest analysis first (for the digest)."""
+        body: dict[str, Any] = {
+            "page_size": 100,
+            "filter": {
+                "and": [
+                    {"property": "Date Found", "date": {"on_or_after": since}},
+                    {
+                        "or": [
+                            {"property": "Status", "select": {"equals": s}}
+                            for s in ("MATCHED", "RESUME_PREPARED", "READY_FOR_REVIEW", "APPROVED")
+                        ]
+                    },
+                    {
+                        "or": [
+                            {"property": "Decision", "select": {"equals": d}}
+                            for d in ("APPLY", "MAYBE")
+                        ]
+                    },
+                ]
+            },
+            "sorts": [{"property": "Match Score", "direction": "descending"}],
+        }
+        data = self._call("POST", f"/data_sources/{self.ds}/query", body) or {}
+        out = []
+        for page in data.get("results", [])[:limit]:
+            props = page.get("properties", {})
+            out.append(
+                {
+                    "company": _plain(props.get("Company")),
+                    "role": _plain(props.get("Role")),
+                    "url": _plain(props.get("Job URL")),
+                    "score": _num(props.get("Match Score")),
+                    "ats": _num(props.get("ATS Estimate")),
+                    "status": _sel(props.get("Status")),
+                    "verdict": _sel(props.get("Company Verdict")),
+                    "purpose": _sel(props.get("Purpose")),
+                    "platform": _sel(props.get("Platform")),
+                    "next": _plain(props.get("Next Action")),
+                    "page": page.get("url", ""),
+                }
+            )
+        return out
 
     def write_report(self, parent_page_id: str, title: str, markdown: str) -> str:
         blocks = []
@@ -185,20 +264,63 @@ class NotionTrackerSink:
             if line.startswith("## "):
                 blocks.append({"type": "heading_2", "heading_2": _rt(line[3:])})
             elif line.startswith("- "):
-                blocks.append({"type": "bulleted_list_item", "bulleted_list_item": _rt(line[2:])})
+                blocks.append(
+                    {"type": "bulleted_list_item", "bulleted_list_item": _rt_links(line[2:])}
+                )
             elif not line.startswith("# "):
-                blocks.append({"type": "paragraph", "paragraph": _rt(line)})
+                blocks.append({"type": "paragraph", "paragraph": _rt_links(line)})
         body = {
             "parent": {"page_id": parent_page_id},
             "properties": {"title": {"title": [{"type": "text", "text": {"content": title}}]}},
             "children": blocks[:100],
         }
         page = self._call("POST", "/pages", body) or {}
+        rest = blocks[100:]
+        if rest and page.get("id"):
+            self.append_blocks(page["id"], rest)
         return page.get("url", "")
 
 
 def _rt(text: str) -> dict[str, Any]:
     return {"rich_text": [{"type": "text", "text": {"content": text[:TEXT_LIMIT]}}]}
+
+
+_URL = re.compile(r"https://[^\s)>\]]+")
+
+
+def _rt_links(text: str) -> dict[str, Any]:
+    """Rich text where every https URL is a clickable link."""
+    parts: list[dict[str, Any]] = []
+    pos = 0
+    for m in _URL.finditer(text):
+        if m.start() > pos:
+            parts.append({"type": "text", "text": {"content": text[pos : m.start()][:TEXT_LIMIT]}})
+        url = m.group(0).rstrip(".,;")
+        parts.append(
+            {"type": "text", "text": {"content": url[:TEXT_LIMIT], "link": {"url": url[:2000]}}}
+        )
+        pos = m.start() + len(url)
+    if pos < len(text):
+        parts.append({"type": "text", "text": {"content": text[pos:][:TEXT_LIMIT]}})
+    return {"rich_text": parts[:100] or [{"type": "text", "text": {"content": ""}}]}
+
+
+_HEXRUN = re.compile(r"[0-9a-f]{32,}")
+
+
+def page_id_of(ref: str) -> str:
+    """Accept a page id (with or without dashes) or a Notion page URL."""
+    compact = ref.split("?", 1)[0].replace("-", "").lower()
+    runs = _HEXRUN.findall(compact)
+    return runs[-1][-32:] if runs else ref
+
+
+def _num(prop: dict[str, Any] | None) -> float:
+    return float((prop or {}).get("number") or 0.0)
+
+
+def _sel(prop: dict[str, Any] | None) -> str:
+    return ((prop or {}).get("select") or {}).get("name", "")
 
 
 class MemorySink:

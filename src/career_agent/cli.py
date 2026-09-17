@@ -254,6 +254,135 @@ def discover(
         raise typer.Exit(1)
 
 
+@app.command()
+def daily(
+    config_path: Path = typer.Option(Path("config/discovery.yaml"), "--config", "-c"),
+    profile_path: Path = typer.Option(None, "--profile", "-p"),
+    notion: bool = typer.Option(False, "--notion", help="Read/write the Notion trackers"),
+    email: bool = typer.Option(False, "--email", help="Email the digest (needs GMAIL_* env)"),
+    out_dir: Path = typer.Option(Path("reports"), "--out", help="Digest and resume files"),
+    public_summary: Path = typer.Option(None, "--public-summary"),
+    save_resumes: bool = typer.Option(
+        False, "--save-resumes", help="Also write DOCX files to --out (never in public CI)"
+    ),
+) -> None:
+    """The full daily run without Claude: discover (ATS boards, job boards,
+    Telegram, job blogs) -> score -> tailored resumes with ESTIMATED ATS ->
+    government IT jobs -> digest in Notion and email. Never submits anything.
+
+    Environment: NOTION_TOKEN, NOTION_DATA_SOURCE_ID, NOTION_DIGEST_PAGE_ID,
+    NOTION_GOVT_DATA_SOURCE_ID (all optional when set in the config),
+    GMAIL_USER, GMAIL_APP_PASSWORD, DIGEST_TO, GOOGLE_SAFE_BROWSING_KEY,
+    VIRUSTOTAL_API_KEY.
+    """
+    import logging
+    import os
+    from datetime import date
+
+    from .discovery.daily import DailyResult, build_digest, prepare_resumes, send_email, since
+    from .discovery.govt import GovtSink, run_govt
+    from .discovery.http import UrllibJsonClient
+    from .discovery.notion_sink import MemorySink, NotionTrackerSink, render_report
+    from .discovery.pipeline import DiscoveryConfig, run_discovery
+    from .discovery.safety import ReputationChecker
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    env = os.environ.get
+    cfg = DiscoveryConfig.load(config_path)
+    prof = load_profile(profile_path)
+    client = UrllibJsonClient()
+    client.reputation = ReputationChecker(  # type: ignore[attr-defined]
+        client, env("GOOGLE_SAFE_BROWSING_KEY", ""), env("VIRUSTOTAL_API_KEY", "")
+    )
+    today = date.today()
+    sink: NotionTrackerSink | MemorySink
+    govt_sink = None
+    report_page = env("NOTION_DIGEST_PAGE_ID", "") or cfg.notion.report_page_id
+    if notion:
+        token = env("NOTION_TOKEN", "")
+        try:
+            sink = NotionTrackerSink(client, token, env("NOTION_DATA_SOURCE_ID", ""))
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from None
+        govt_ds = env("NOTION_GOVT_DATA_SOURCE_ID", "") or cfg.notion.govt_data_source_id
+        if govt_ds:
+            govt_sink = GovtSink(client, token, govt_ds)
+    else:
+        sink = MemorySink()
+        console.print("[yellow]Dry run: nothing is written to Notion (use --notion).[/yellow]")
+
+    report = run_discovery(cfg, prof, client, sink, today=today)
+    result = DailyResult()
+    prepare_resumes(report, prof, cfg, sink if notion else None, result)
+    if notion and isinstance(sink, NotionTrackerSink):
+        try:
+            result.pending = sink.pending_rows(since(today))
+        except Exception as exc:
+            result.errors.append(f"reading pending rows: {exc}")
+    govt = run_govt(
+        cfg.govt_watch,
+        client,
+        report.govt_leads,
+        govt_sink,
+        today=today,
+        max_new=cfg.max_govt_new_per_run,
+        reputation=client.reputation,  # type: ignore[attr-defined]
+    )
+    digest = build_digest(today.isoformat(), report, result, govt)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"digest_{today.isoformat()}.md").write_text(digest, encoding="utf-8")
+    if save_resumes:
+        for r in result.resumes:
+            (out_dir / r.filename).write_bytes(r.docx)
+    console.print(digest)
+
+    failures: list[str] = list(report.write_errors) + result.errors + govt.write_errors
+    if notion and report_page and isinstance(sink, NotionTrackerSink):
+        try:
+            url = sink.write_report(report_page, f"Daily jobs — {today.isoformat()}", digest)
+            console.print(f"Notion digest page: {url}")
+        except Exception as exc:
+            failures.append(f"Notion digest page: {exc}")
+    if email:
+        user, password = env("GMAIL_USER", ""), env("GMAIL_APP_PASSWORD", "")
+        if not user or not password:
+            console.print(
+                "[yellow]Email skipped: GMAIL_USER / GMAIL_APP_PASSWORD not set.[/yellow]"
+            )
+        else:
+            ready = [r for r in result.resumes if r.ready][:8]
+            n_new = len([r for r in result.resumes if r.ready])
+            subject = (
+                f"[Career Agent] {today.isoformat()}: {n_new} ready, "
+                f"{len(govt.new)} govt, {report.community_manual} leads"
+            )
+            try:
+                send_email(
+                    subject,
+                    digest,
+                    user,
+                    password,
+                    env("DIGEST_TO", "") or user,
+                    [(r.filename, r.docx) for r in ready],
+                )
+                console.print("Digest emailed.")
+            except Exception as exc:
+                failures.append(f"email: {type(exc).__name__}: {exc}")
+    if public_summary:
+        public_summary.write_text(
+            render_report(report, public=True) + f"- Resumes prepared: {len(result.resumes)} "
+            f"({sum(r.ready for r in result.resumes)} ready)\n"
+            f"- Government: {govt.pages_ok} official pages read, {len(govt.new)} new links\n"
+            f"- Other errors: {len(failures)}\n",
+            encoding="utf-8",
+        )
+    for f in failures:
+        console.print(f"[red]{f}[/red]")
+    if report.boards_ok == 0 or failures:
+        raise typer.Exit(1)
+
+
 def main() -> None:  # pragma: no cover
     app()
 

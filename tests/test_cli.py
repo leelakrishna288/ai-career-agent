@@ -7,7 +7,7 @@ from career_agent.cli import app
 
 runner = CliRunner()
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = str(ROOT / "profile" / "master_profile.yaml")
+PROFILE = str(ROOT / "tests" / "fixtures" / "profile_fixture.yaml")
 GOOD_JOB = str(ROOT / "examples" / "jpmorgan_hyderabad.yaml")
 BAD_JOB = str(ROOT / "examples" / "senior_ml_riyadh.yaml")
 

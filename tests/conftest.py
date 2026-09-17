@@ -20,7 +20,7 @@ def repo_root():
 
 @pytest.fixture(scope="session")
 def profile():
-    return load_profile(ROOT / "profile" / "master_profile.yaml")
+    return load_profile(ROOT / "tests" / "fixtures" / "profile_fixture.yaml")
 
 
 @pytest.fixture
