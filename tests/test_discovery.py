@@ -720,3 +720,48 @@ def test_aggregator_rows_name_the_board_and_link_back(profile):
     assert NotionTrackerSink.properties(rec, "2026-09-17")["Platform"] == {
         "select": {"name": "Remotive"}
     }
+
+
+def test_board_copy_of_an_employer_posting_is_a_duplicate(profile):
+    existing = [
+        ExistingKey(
+            "Remote Co",
+            "backend engineer (java)",
+            "https://job-boards.greenhouse.io/remoteco/jobs/1",
+        )
+    ]
+    from career_agent.models import normalise_role
+
+    existing[0].normalized_role = normalise_role("Backend Engineer (Java)")
+    client = FakeClient({"https://himalayas.app/jobs/api/search": {"jobs": [HIMALAYAS_JOB]}})
+    cfg = config(boards=[BoardConfig(platform="himalayas", token="java|India", company="H")])
+    sink = MemorySink(existing)
+    rep = run_discovery(cfg, profile, client, sink, today=TODAY)
+    assert rep.duplicates == 1 and not sink.records
+
+
+def test_contract_and_gig_listings_are_skipped_before_scoring(profile):
+    gig = dict(HIMALAYAS_JOB, employmentType="Contractor")
+    client = FakeClient({"https://himalayas.app/jobs/api/search": {"jobs": [gig]}})
+    cfg = config(boards=[BoardConfig(platform="himalayas", token="java|India", company="H")])
+    sink = MemorySink()
+    rep = run_discovery(cfg, profile, client, sink, today=TODAY)
+    assert rep.not_permanent == 1 and not sink.records
+    assert "1 not permanent roles" in render_report(rep)
+    full = dict(HIMALAYAS_JOB, employmentType="Full Time")
+    client = FakeClient({"https://himalayas.app/jobs/api/search": {"jobs": [full]}})
+    sink = MemorySink()
+    run_discovery(cfg, profile, client, sink, today=TODAY)
+    assert len(sink.records) == 1
+    props = NotionTrackerSink.properties(sink.records[0], "2026-09-17")
+    assert (
+        "employer's own application page" in props["Next Action"]["rich_text"][0]["text"]["content"]
+    )
+
+
+def test_shipped_config_drops_gig_titles(repo_root):
+    cfg = DiscoveryConfig.load(repo_root / "config" / "discovery.yaml")
+    exclude = compile_any(cfg.exclude_titles)
+    assert not title_relevant("AI Tutor - Software Engineer Specialist", None, exclude)[0]
+    assert not title_relevant("LLM Systems Engineer | Upto $500/task Task based", None, exclude)[0]
+    assert title_relevant("Backend Engineer", None, exclude)[0]

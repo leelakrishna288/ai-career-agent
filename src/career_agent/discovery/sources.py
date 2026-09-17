@@ -49,6 +49,7 @@ class RawPosting:
     country_hint: str = ""
     salary_text: str = ""
     extra_locations: list[str] = field(default_factory=list)
+    employment_type: str = ""  # as published, e.g. "Full Time", "Contractor"
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -139,6 +140,7 @@ def fetch_lever(client: JsonClient, board: Board) -> list[RawPosting]:
                 country_hint=(j.get("country") or "").upper(),
                 salary_text=salary,
                 extra_locations=list(cats.get("allLocations") or []),
+                employment_type=cats.get("commitment") or "",
             )
         )
     return out
@@ -179,6 +181,7 @@ def fetch_ashby(client: JsonClient, board: Board) -> list[RawPosting]:
                 country_hint=addr.get("addressCountry") or "",
                 salary_text=salary or "",
                 extra_locations=[s for s in secondary if s],
+                employment_type=j.get("employmentType") or "",
             )
         )
     return out
@@ -220,6 +223,7 @@ def fetch_himalayas(client: JsonClient, board: Board) -> list[RawPosting]:
                     workplace_hint="remote",
                     salary_text=sal,
                     extra_locations=places[1:],
+                    employment_type=j.get("employmentType") or "",
                 )
             )
         if len(jobs) < 20:
@@ -247,6 +251,7 @@ def fetch_remotive(client: JsonClient, board: Board) -> list[RawPosting]:
                 posted=_iso_date(j.get("publication_date")),
                 workplace_hint="remote",
                 salary_text=(j.get("salary") or "").strip(),
+                employment_type=(j.get("job_type") or "").replace("_", " "),
             )
         )
     return out

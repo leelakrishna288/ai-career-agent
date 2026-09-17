@@ -152,7 +152,12 @@ class NotionTrackerSink:
             "Company Verdict": _select("UNVERIFIED"),
             "Google Maps Presence": _select("Not checked"),
             "Next Action": _text(
-                "Run company trust check, then tailor resume (Claude daily run or manual)"
+                (
+                    "Find the employer's own application page (this is a job-board copy), "
+                    "then run the company trust check and tailor the resume"
+                    if rec.raw.platform in ("Himalayas", "Remotive")
+                    else "Run company trust check, then tailor resume (Claude daily run or manual)"
+                )
                 if rec.status == "MATCHED"
                 else ""
             ),
@@ -219,7 +224,8 @@ def render_report(report: RunReport, public: bool = False) -> str:
         "## Summary",
         f"- Boards fetched: {report.boards_ok} ok, {len(report.boards_failed)} failed",
         f"- Postings read: {report.fetched}",
-        f"- Skipped: {report.irrelevant_title} off-target titles, {report.too_old} too old, "
+        f"- Skipped: {report.irrelevant_title} off-target titles, "
+        f"{report.not_permanent} not permanent roles, {report.too_old} too old, "
         f"{report.unreachable} unreachable on work authorisation, {report.duplicates} already tracked, "
         f"{report.capped} over the per-run cap",
         f"- New rows written: {len(report.recorded)} "

@@ -99,6 +99,12 @@ exclude_titles:
   - fullstack
   - data scientist
   - site reliability
+  # gig / annotation work, not a permanent engineering role
+  - tutor
+  - task based
+  - per task
+  - freelance
+  - trainer
 
 # Work authorisation: roles outside these are skipped BEFORE scoring
 # (remote-worldwide roles are always kept).

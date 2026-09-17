@@ -39,6 +39,21 @@ class DiscoveryConfig(BaseModel):
     max_posting_age_days: int = 45
     max_new_per_run: int = 40
     max_new_per_company: int = 6
+    # Leela is looking for a permanent role; gig, contract and part-time
+    # listings are skipped before scoring.
+    exclude_employment_types: list[str] = Field(
+        default_factory=lambda: [
+            "contract",
+            "contractor",
+            "freelance",
+            "part time",
+            "part-time",
+            "parttime",
+            "intern",
+            "internship",
+            "temporary",
+        ]
+    )
     target_locations: list[str] = Field(default_factory=list)
     practice_locations: list[str] = Field(default_factory=list)
 
@@ -82,6 +97,7 @@ class RunReport:
     too_old: int = 0
     unreachable: int = 0
     duplicates: int = 0
+    not_permanent: int = 0
     capped: int = 0
     # (company, role, score, decision, url, work mode, purpose)
     recorded: list[tuple[str, str, float, str, str, str, str]] = field(default_factory=list)
@@ -99,10 +115,23 @@ def _company_key(name: str) -> str:
     return "".join(c for c in name.lower() if c.isalnum())[:12]
 
 
+def _is_aggregator_url(url: str) -> bool:
+    u = url.lower()
+    return any(host in u for host in ("himalayas.app", "remotive.com"))
+
+
 def is_duplicate(ex: Extracted, raw: RawPosting, existing: list[ExistingKey]) -> bool:
     role = normalise_role(ex.job.role)
     comp = _company_key(ex.job.company)
     for k in existing:
+        # A job-board copy of an employer posting has a different URL, so the
+        # same company + role is enough when either side came from a board.
+        if (
+            _company_key(k.company) == comp
+            and k.normalized_role == role
+            and (_is_aggregator_url(k.url) or _is_aggregator_url(raw.url))
+        ):
+            return True
         if k.external_id and k.external_id == raw.external_id:
             return True
         if k.url and raw.url and k.url.rstrip("/").lower() == raw.url.rstrip("/").lower():
@@ -149,6 +178,7 @@ def run_discovery(
     report = RunReport(run_date=today.isoformat())
     include = compile_any(config.include_titles)
     exclude = compile_any(config.exclude_titles)
+    not_permanent = compile_any(config.exclude_employment_types)
     allowed = set(config.allowed_countries)
     cutoff = (today - timedelta(days=config.max_posting_age_days)).isoformat()
     scorer = Scorer(profile)
@@ -171,6 +201,9 @@ def run_discovery(
             ok, _ = title_relevant(raw.title, include, exclude)
             if not ok or not raw.title:
                 report.irrelevant_title += 1
+                continue
+            if not_permanent and raw.employment_type and not_permanent.search(raw.employment_type):
+                report.not_permanent += 1
                 continue
             if raw.posted and raw.posted < cutoff:
                 report.too_old += 1
