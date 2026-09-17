@@ -19,7 +19,7 @@ from .models import (
     MasterProfile,
     TailoredResume,
 )
-from .scoring import _norm
+from .scoring import _contains_term, _norm
 from .validation import ValidationGate
 
 _SAFE = re.compile(r"[^A-Za-z0-9]+")
@@ -83,7 +83,9 @@ class ResumeTailor:
             # recorded as "Model Context Protocol", or the tailoring silently
             # buries the most relevant thing on the resume.
             names = [_norm(skill.name), *(_norm(a) for a in skill.aliases)]
-            return sum(1 for w in wanted if w and any(w == n or w in n or n in w for n in names))
+            return sum(
+                1 for w in wanted if w and any(w == n or _contains_term(w, n) for n in names)
+            )
 
         promoted = sorted(printable, key=lambda s: (-relevance(s), s.name.lower()))
         matched = [s.name for s in promoted if relevance(s)]
@@ -97,7 +99,7 @@ class ResumeTailor:
     def _ordered_projects(self, wanted: list[str], changes: list[str]) -> list:
         def relevance(p) -> int:  # noqa: ANN001
             blob = f"{p.name} {p.stack} {' '.join(p.bullets)}".lower()
-            return sum(1 for w in wanted if w and w in blob)
+            return sum(1 for w in wanted if w and _contains_term(blob, w))
 
         ordered = sorted(self.profile.projects, key=lambda p: (-relevance(p), p.name))
         if ordered and relevance(ordered[0]):
@@ -114,7 +116,7 @@ class ResumeTailor:
 
             def rel(b: str) -> int:
                 low = b.lower()
-                return sum(1 for w in wanted if w and w in low)
+                return sum(1 for w in wanted if w and _contains_term(low, w))
 
             ordered = sorted(e.bullets, key=lambda b: -rel(b))
             moved = moved or ordered != list(e.bullets)

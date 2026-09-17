@@ -65,7 +65,6 @@ boards:
   # becomes the Job URL.
   - { platform: jobsite, token: "https://www.offcampusjobsindia.com/category/it-jobs", company: offcampusjobsindia.com }  # Leela
   - { platform: jobsite, token: "https://www.offcampusjobsindia.com/remote-jobs", company: offcampusjobsindia.com }
-  - { platform: jobsite, token: "https://www.offcampusjobsindia.com/jobs?q=java", company: offcampusjobsindia.com }
 
 # Target role families (title must match at least one).
 include_titles:
@@ -101,6 +100,7 @@ exclude_titles:
   - vp
   - manager
   - architect
+  - lead
   - intern
   - sales
   - account
@@ -165,7 +165,7 @@ govt_watch:
   - { org: NIC, url: "https://recruitment.nic.in/", cs_org: true }
   - { org: ISRO, url: "https://www.isro.gov.in/Careers.html" }
   - { org: DRDO, url: "https://drdo.gov.in/drdo/en/offerings/vacancies" }
-  - { org: CRIS, url: "https://cris.org.in/loadpage?page=indexcareer", cs_org: true }
+  - { org: CRIS, url: "https://cris.org.in/loadpage?page=indexcareer" }
   - { org: STPI, url: "https://stpi.in/en/careers", cs_org: true }
   - { org: Digital India Corporation, url: "https://dic.gov.in/careers/", cs_org: true }
   - { org: C-DOT, url: "https://www.cdot.in/cdotweb/web/current_openings.php?lang=en", cs_org: true }

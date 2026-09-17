@@ -281,6 +281,7 @@ def fetch_telegram(client: JsonClient, board: Board) -> list[RawPosting]:
         guess_company_role,
         parse_channel,
         post_age_days,
+        split_blocks,
     )
 
     get_text = getattr(client, "get_text", None)
@@ -301,35 +302,36 @@ def fetch_telegram(client: JsonClient, board: Board) -> list[RawPosting]:
     for post in ch.posts:
         if post_age_days(post, today) > TELEGRAM_MAX_AGE_DAYS:
             continue
-        category, _ = classify(post.text)
-        if category == "skip":
-            continue
-        link = first_external_link(post)
-        if category == "private" and not link:
-            continue
-        verdict = safety.assess(link, post.text, reputation)
-        if verdict.verdict == safety.DANGEROUS:
-            continue
-        company, role = guess_company_role(post.text)
-        f = fields(post.text)
-        out.append(
-            RawPosting(
-                company=company or f"Unknown (see {post.url})",
-                title=role or post.text.splitlines()[0][:80],
-                location=f.get("location", ""),
-                url=link or post.url,
-                external_id=f"tg-{post.post_id}",
-                platform="Telegram",
-                description=post.text,
-                posted=post.day,
-                category=category,
-                safety=verdict.summary(),
-                safety_verdict=verdict.verdict,
-                source_trust=f"{level} ({why})",
-                source_url=post.url,
-                source_name=f"Telegram {ch.title or handle}",
+        for n, (text, links) in enumerate(split_blocks(post)):
+            category, _ = classify(text)
+            if category == "skip":
+                continue
+            link = first_external_link(links)
+            if not link:
+                continue
+            verdict = safety.assess(link, text, reputation)
+            if verdict.verdict == safety.DANGEROUS:
+                continue
+            company, role = guess_company_role(text)
+            f = fields(text)
+            out.append(
+                RawPosting(
+                    company=company or f"Unknown (see {post.url})",
+                    title=role or text.splitlines()[0][:80],
+                    location=f.get("location", ""),
+                    url=link,
+                    external_id=f"tg-{post.post_id}" + (f"-{n}" if n else ""),
+                    platform="Telegram",
+                    description=text,
+                    posted=post.day,
+                    category=category,
+                    safety=verdict.summary(),
+                    safety_verdict=verdict.verdict,
+                    source_trust=f"{level} ({why})",
+                    source_url=post.url,
+                    source_name=f"Telegram {ch.title or handle}",
+                )
             )
-        )
     return out
 
 

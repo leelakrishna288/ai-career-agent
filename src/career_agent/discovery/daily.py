@@ -43,6 +43,7 @@ class ResumeOutcome:
     missing: list[str]
     auto_submit_eligible: bool
     docx: bytes = b""
+    board_copy: bool = False
     error: str = ""
 
 
@@ -95,6 +96,7 @@ def prepare_resumes(
                 and rec.analysis.score >= cfg.auto_submit_min_match
                 and rec.raw.platform in EMPLOYER_PLATFORMS,
                 docx=docx,
+                board_copy=rec.raw.platform not in EMPLOYER_PLATFORMS,
             )
         except Exception as exc:  # one resume must not stop the rest
             result.errors.append(f"resume {job.company} / {job.role}: {exc}")
@@ -200,8 +202,9 @@ def build_digest(
     ready = [r for r in result.resumes if r.ready]
     for r in sorted(ready, key=lambda r: (r.purpose != "TARGET", -r.score)):
         auto = " · meets auto-submit bar after company check" if r.auto_submit_eligible else ""
+        copy = " · job-board copy: apply on the employer's page it links to" if r.board_copy else ""
         L.append(
-            f"- {r.purpose} · {r.company} — {r.role} · match {r.score:.0f} · ATS {r.ats:.0f}{auto} · {r.url}"
+            f"- {r.purpose} · {r.company} — {r.role} · match {r.score:.0f} · ATS {r.ats:.0f}{auto}{copy} · {r.url}"
         )
     if not ready:
         L.append("- None today.")

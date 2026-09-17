@@ -1114,3 +1114,69 @@ def test_post_multipart(monkeypatch):
     with pytest.raises(HttpError) as err:
         c.post_multipart("https://api.test/send", "file", "a", b"", "x/y")
     assert err.value.body == "nope"
+
+
+# -- fixes found by the live dry run (2026-09-17) ---------------------------------
+def test_digest_posts_are_split_into_blocks():
+    from career_agent.discovery.telegram import TgPost, split_blocks
+
+    ch = parse_channel("govtjobs9", web("tg_govtjobs9.html"))
+    multi = next(p for p in ch.posts if "Junior Engineer" in p.text and "IIT" in p.text)
+    blocks = split_blocks(multi)
+    assert len(blocks) >= 3
+    kinds = [classify(t)[0] for t, _ in blocks]
+    # the civil/mechanical blocks are no longer carried by another block's "MCA"
+    assert "govt" in kinds and kinds.count("govt") < len(blocks)
+    civil = next(t for t, _ in blocks if "Junior Engineer" in t)
+    assert classify(civil)[0] == "skip"
+    single = TgPost("c/1", "https://t.me/c/1", "", "one job", ["https://a.example"])
+    assert split_blocks(single) == [("one job", ["https://a.example"])]
+    assert guess_company_role("NIELIT  Recruitment 2026\nPost Name: Scientist B")[0] == "NIELIT"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Corrigendum regarding the upper age limit for Project Engineer 2026",
+        "Advt ISTRAC 2026 - The Computer Based Test (CBT) is scheduled on 25.09.2026 computer science",
+        "Consultant (Part time/Visiting) 2026 software",
+        "Assistant Manager IT on deputation basis 2026",
+        "Research Fellow in Computer Science 2026",
+        "Extension of last date 2026 IT officer",
+    ],
+)
+def test_government_noise_is_not_a_new_advert(text):
+    page = f'<a href="/x/{abs(hash(text))}.pdf">{text}</a>'
+    assert scan_page("X", "https://x.gov.in/", page, True, TODAY) == []
+
+
+def test_skill_promotion_uses_whole_terms(real):
+    job = _job(role="Backend Engineer", required_skills=["rust", "go", "java"], preferred_skills=[])
+    r = ResumeTailor(real).tailor(job, Scorer(real).score(job))
+    top = r.skills["Most relevant to this role"]
+    assert top == ["Java"], top
+
+
+def test_digest_marks_board_copies():
+    from career_agent.discovery.daily import ResumeOutcome
+    from career_agent.discovery.pipeline import RunReport
+
+    res = DailyResult(
+        resumes=[
+            ResumeOutcome(
+                "A",
+                "SE",
+                "https://himalayas.app/x",
+                "TARGET",
+                85,
+                95,
+                True,
+                "a.docx",
+                [],
+                False,
+                board_copy=True,
+            )
+        ]
+    )
+    d = build_digest("2026-09-17", RunReport(run_date="2026-09-17"), res, None)
+    assert "job-board copy" in d

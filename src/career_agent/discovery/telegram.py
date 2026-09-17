@@ -268,6 +268,23 @@ def guess_company_role(text: str) -> tuple[str, str]:
     return company[:60], role[:100]
 
 
+_SEP = re.compile(r"\n\s*[-=_─]{8,}\s*\n")
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"')]+")
+
+
+def split_blocks(post: TgPost) -> list[tuple[str, list[str]]]:
+    """A digest post lists several jobs separated by rule lines. Each block
+    is classified on its own, with only the links written inside it."""
+    parts = [p for p in _SEP.split(post.text) if p.strip()]
+    if len(parts) <= 1:
+        return [(post.text, list(post.links))]
+    out = []
+    for part in parts:
+        links = [u.rstrip(".,;") for u in _URL_IN_TEXT.findall(part)]
+        out.append((part.strip(), links))
+    return out
+
+
 def classify(text: str) -> tuple[str, str]:
     """("govt" | "private" | "skip", reason)."""
     if not text.strip():
@@ -294,8 +311,9 @@ def classify(text: str) -> tuple[str, str]:
     return "private", ""
 
 
-def first_external_link(post: TgPost) -> str:
-    for link in post.links:
+def first_external_link(post: TgPost | list[str]) -> str:
+    links = post if isinstance(post, list) else post.links
+    for link in links:
         host = re.sub(r"^https?://(www\.)?", "", link).split("/")[0].lower()
         if host not in ("t.me", "telegram.me", "telegram.org"):
             return link

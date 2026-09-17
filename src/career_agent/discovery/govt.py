@@ -40,7 +40,10 @@ RECRUIT = re.compile(
 NOT_ADVERT = re.compile(
     r"(?i)(result|answer key|marks|shortlist|merit list|admit card|call letter|tender|rti\b|"
     r"archive|cancel+ed|interview schedule|document verification|syllabus only|"
-    r"e-?procurement|auction|press release)"
+    r"e-?procurement|auction|press release|corrigendum|addendum|extension|extended|"
+    r"is scheduled|exam(ination)? (date|schedule)|schedule of|part[- ]?time|visiting|"
+    r"deputation|pa/ps|post[- ]?doctoral|research fellow|\bjrf\b|\bsrf\b|ph\.?d|"
+    r"apprentice|internship|tenure track|faculty|professor)"
 )
 MUST_CHECK = (
     "Open the official notification and check: your date of birth vs the age cut-off date; "
