@@ -224,9 +224,17 @@ def channel_trust(ch: ChannelPage, today: date, min_subscribers: int) -> tuple[s
     return "LOW", reason + f" (under {min_subscribers:,})"
 
 
+_WIDE_GAP = re.compile(r"[ \t\u00a0]{3,}")
+
+
+def _lines(text: str) -> str:
+    """Posts often lose their line breaks and keep only wide runs of spaces."""
+    return _WIDE_GAP.sub("\n", text)
+
+
 def fields(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    for m in KEY_LINE.finditer(text):
+    for m in KEY_LINE.finditer(_lines(text)):
         key = m.group(1).lower()
         key = {
             "company name": "company",
@@ -249,9 +257,17 @@ def fields(text: str) -> dict[str, str]:
 
 
 def guess_company_role(text: str) -> tuple[str, str]:
+    text = _lines(text)
     f = fields(text)
     company, role = f.get("company", ""), f.get("role", "")
-    first = next((ln.strip(" *•-🔥📢✅🚀") for ln in text.splitlines() if ln.strip()), "")
+    first = next(
+        (
+            ln.strip(" *•-🔥📢✅🚀🔴🟢")
+            for ln in text.splitlines()
+            if ln.strip(" *•-🔥📢✅🚀🔴🟢") and not re.fullmatch(r"(?i)\W*new\W*", ln.strip())
+        ),
+        "",
+    )
     if not company:
         m = re.search(
             r"(?i)^\W*([A-Z][\w&.,' -]{1,40}?)\s+(?:is\s+)?(?:hiring|recruitment|careers|off ?campus)",

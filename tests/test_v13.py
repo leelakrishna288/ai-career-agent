@@ -1180,3 +1180,10 @@ def test_digest_marks_board_copies():
     )
     d = build_digest("2026-09-17", RunReport(run_date="2026-09-17"), res, None)
     assert "job-board copy" in d
+
+
+def test_fields_survive_posts_without_line_breaks():
+    text = "🔴 New          IIT  Recruitment 2026          💼 Post Name: Project Engineer   Jobs"
+    company, role = guess_company_role(text)
+    assert company == "IIT" and role.startswith("Project Engineer")
+    assert guess_company_role("🔴 New\nAcme is hiring Java Developer")[1].endswith("Java Developer")
