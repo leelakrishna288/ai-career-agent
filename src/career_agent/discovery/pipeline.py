@@ -17,7 +17,8 @@ from ..scoring import AI_TERMS, Scorer
 from .extract import Extracted, to_job_posting
 from .filters import compile_any, reachable, title_relevant
 from .http import JsonClient
-from .sources import Board, RawPosting, fetch_board
+from .locations import PRACTICE, LocationTiers
+from .sources import AGGREGATORS, Board, RawPosting, fetch_board
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class DiscoveryConfig(BaseModel):
     max_posting_age_days: int = 45
     max_new_per_run: int = 40
     max_new_per_company: int = 6
+    target_locations: list[str] = Field(default_factory=list)
+    practice_locations: list[str] = Field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path | str) -> DiscoveryConfig:
@@ -60,6 +63,7 @@ class NewRecord:
     status: str
     variant: str
     notes: str
+    purpose: str = ""
 
 
 class TrackerSink(Protocol):
@@ -79,7 +83,8 @@ class RunReport:
     unreachable: int = 0
     duplicates: int = 0
     capped: int = 0
-    recorded: list[tuple[str, str, float, str, str, str]] = field(default_factory=list)
+    # (company, role, score, decision, url, work mode, purpose)
+    recorded: list[tuple[str, str, float, str, str, str, str]] = field(default_factory=list)
     write_errors: list[str] = field(default_factory=list)
 
     def counts(self, decision: str) -> int:
@@ -147,6 +152,7 @@ def run_discovery(
     allowed = set(config.allowed_countries)
     cutoff = (today - timedelta(days=config.max_posting_age_days)).isoformat()
     scorer = Scorer(profile)
+    tiers = LocationTiers(config.target_locations, config.practice_locations)
     existing = sink.existing_keys()
     seen_this_run: list[ExistingKey] = []
     candidates: list[tuple[JobAnalysis, Extracted, RawPosting, str]] = []
@@ -194,12 +200,19 @@ def run_discovery(
         ):
             report.capped += 1
             continue
+        purpose = tiers.purpose(ex)
+        origin = (
+            f"Discovered by the standalone runtime via {raw.platform} (listing: {raw.url}). "
+            "Apply on the employer's own site where the listing links to one."
+            if raw.platform.lower() in AGGREGATORS
+            else "Discovered by the standalone runtime from the employer's public ATS API."
+        )
         notes = "; ".join(
             x
             for x in (
                 reach_note,
-                "Discovered by the standalone runtime from the employer's public ATS API. "
-                "Company trust check (SYSTEM_SPEC 3a) and tailored resume still pending.",
+                "PRACTICE location - interview practice only" if purpose == PRACTICE else "",
+                origin + " Company trust check (SYSTEM_SPEC 3a) and tailored resume still pending.",
             )
             if x
         )
@@ -210,6 +223,7 @@ def run_discovery(
             status=status_for(analysis.decision),
             variant=choose_variant(ex),
             notes=notes,
+            purpose=purpose,
         )
         try:
             sink.add(record)
@@ -225,6 +239,7 @@ def run_discovery(
                 analysis.decision.value,
                 raw.url,
                 ex.work_mode_label,
+                purpose,
             )
         )
     return report

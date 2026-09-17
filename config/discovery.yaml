@@ -36,6 +36,16 @@ boards:
   - { platform: ashby, token: trm-labs, company: TRM Labs }
   - { platform: ashby, token: credo.ai, company: Credo AI }
   - { platform: ashby, token: furtherai, company: FurtherAI }
+  # Remote-job boards with free public APIs (terms: link back + name the board;
+  # never re-publish). Token for Himalayas = "<keywords>|<country>", empty
+  # country = worldwide-remote only. Remotive token = category, fetched once.
+  - { platform: himalayas, token: "java|India", company: Himalayas }
+  - { platform: himalayas, token: "backend|India", company: Himalayas }
+  - { platform: himalayas, token: "ai engineer|India", company: Himalayas }
+  - { platform: himalayas, token: "llm|India", company: Himalayas }
+  - { platform: himalayas, token: "java|", company: Himalayas }
+  - { platform: himalayas, token: "ai engineer|", company: Himalayas }
+  - { platform: remotive, token: software-dev, company: Remotive }
 
 # Target role families (title must match at least one).
 include_titles:
@@ -93,6 +103,16 @@ exclude_titles:
 # Work authorisation: roles outside these are skipped BEFORE scoring
 # (remote-worldwide roles are always kept).
 allowed_countries: [India, UAE, Qatar, Saudi Arabia]
+# Location purpose (Leela, 2026-09-17). TARGET = would accept an offer.
+# PRACTICE = apply only to practise interviews; offers there will be declined.
+# Move a city between the lists when her plan changes.
+target_locations:
+  [hyderabad, secunderabad, bengaluru, bangalore, chennai,
+   dubai, abu dhabi, sharjah, doha, riyadh, jeddah]
+practice_locations:
+  [pune, mumbai, navi mumbai, thane, gurgaon, gurugram, noida, greater noida,
+   delhi, new delhi, delhi ncr, ncr, faridabad, ghaziabad, kolkata]
+
 max_posting_age_days: 45
 max_new_per_run: 40
 max_new_per_company: 6

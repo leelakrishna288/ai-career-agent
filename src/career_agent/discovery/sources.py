@@ -1,8 +1,15 @@
-"""Public ATS job-board adapters: Greenhouse, Lever, Ashby.
+"""Public job-source adapters.
 
-All three publish documented, unauthenticated JSON endpoints intended for
-exactly this use (embedding a company's open roles elsewhere). LinkedIn and
-Naukri are deliberately absent: their terms prohibit automated collection.
+Employer ATS boards (Greenhouse, Lever, Ashby) publish documented,
+unauthenticated JSON endpoints intended for exactly this use. Two remote-job
+boards (Himalayas, Remotive) publish free public APIs whose terms require a
+link back to the listing and naming the board as the source - the tracker
+keeps the board URL and sets Platform to the board's name. Neither may be
+re-published to another job board; this tool only writes to a private tracker.
+
+LinkedIn, Naukri and Indeed are deliberately absent: their terms prohibit
+automated collection and automated applying. Their jobs arrive through the
+email alerts the user subscribes to.
 """
 
 from __future__ import annotations
@@ -64,8 +71,10 @@ def _iso_date(value: Any) -> str:
     if value in (None, ""):
         return ""
     try:
-        if isinstance(value, (int, float)):  # Lever: epoch milliseconds
-            return datetime.fromtimestamp(value / 1000, tz=timezone.utc).date().isoformat()
+        if isinstance(value, (int, float)):
+            # Lever sends epoch milliseconds, Himalayas epoch seconds.
+            seconds = value / 1000 if value > 100_000_000_000 else value
+            return datetime.fromtimestamp(seconds, tz=timezone.utc).date().isoformat()
         return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
     except (ValueError, OSError):
         return ""
@@ -175,7 +184,82 @@ def fetch_ashby(client: JsonClient, board: Board) -> list[RawPosting]:
     return out
 
 
-FETCHERS = {"greenhouse": fetch_greenhouse, "lever": fetch_lever, "ashby": fetch_ashby}
+HIMALAYAS_PAGES = 2  # 20 jobs per page; the API rate-limits heavier use
+
+
+def fetch_himalayas(client: JsonClient, board: Board) -> list[RawPosting]:
+    """Token format: "<keywords>|<country>". An empty country searches
+    worldwide-remote roles only."""
+    query, _, country = board.token.partition("|")
+    params = f"q={quote(query.strip())}"
+    params += f"&country={quote(country.strip())}" if country.strip() else "&worldwide=true"
+    out: list[RawPosting] = []
+    for page in range(1, HIMALAYAS_PAGES + 1):
+        url = f"https://himalayas.app/jobs/api/search?{params}&page={page}"
+        data = client.request("GET", url) or {}
+        jobs = data.get("jobs") or []
+        for j in jobs:
+            places = [p for p in j.get("locationRestrictions") or [] if p]
+            link = j.get("applicationLink") or j.get("guid") or ""
+            sal = ""
+            if j.get("minSalary") or j.get("maxSalary"):
+                sal = (
+                    f"{j.get('currency') or ''} {j.get('minSalary') or ''}-"
+                    f"{j.get('maxSalary') or ''} {j.get('salaryPeriod') or ''}"
+                ).strip()
+            out.append(
+                RawPosting(
+                    company=(j.get("companyName") or "").strip(),
+                    title=(j.get("title") or "").strip(),
+                    location=", ".join(places) if places else "Worldwide",
+                    url=link,
+                    external_id=f"himalayas-{j.get('guid') or link}",
+                    platform="Himalayas",
+                    description=html_to_text(j.get("description") or ""),
+                    posted=_iso_date(j.get("pubDate")),
+                    workplace_hint="remote",
+                    salary_text=sal,
+                    extra_locations=places[1:],
+                )
+            )
+        if len(jobs) < 20:
+            break
+    return out
+
+
+def fetch_remotive(client: JsonClient, board: Board) -> list[RawPosting]:
+    """Token = Remotive category slug. One call per run: Remotive asks for at
+    most four fetches a day."""
+    url = f"https://remotive.com/api/remote-jobs?category={quote(board.token)}"
+    data = client.request("GET", url) or {}
+    out = []
+    for j in data.get("jobs", []):
+        where = (j.get("candidate_required_location") or "").strip()
+        out.append(
+            RawPosting(
+                company=(j.get("company_name") or "").strip(),
+                title=(j.get("title") or "").strip(),
+                location=where or "Worldwide",
+                url=j.get("url") or "",
+                external_id=f"remotive-{j.get('id')}",
+                platform="Remotive",
+                description=html_to_text(j.get("description") or ""),
+                posted=_iso_date(j.get("publication_date")),
+                workplace_hint="remote",
+                salary_text=(j.get("salary") or "").strip(),
+            )
+        )
+    return out
+
+
+FETCHERS = {
+    "greenhouse": fetch_greenhouse,
+    "lever": fetch_lever,
+    "ashby": fetch_ashby,
+    "himalayas": fetch_himalayas,
+    "remotive": fetch_remotive,
+}
+AGGREGATORS = {"himalayas", "remotive"}
 
 
 def fetch_board(client: JsonClient, board: Board) -> list[RawPosting]:

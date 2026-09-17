@@ -10,8 +10,14 @@ active.
 1. Reads public job-board APIs published by employers' applicant tracking
    systems: Greenhouse, Lever and Ashby (`config/discovery.yaml`). These
    endpoints are documented and meant for embedding job lists. No login,
-   no scraping, no CAPTCHA handling. LinkedIn and Naukri are deliberately not
-   included because their terms prohibit automated collection.
+   no scraping, no CAPTCHA handling. Since v1.2 it also reads two remote-job
+   boards with free public APIs, Himalayas and Remotive. Their terms require
+   linking back to the listing and naming the board as the source, so each row
+   keeps the board URL and sets Platform to the board's name. Remotive asks
+   for at most four fetches a day, so the run makes one Remotive call.
+   LinkedIn, Naukri and Indeed are deliberately not included. Their terms
+   prohibit automated collection and automated applying, so their jobs arrive
+   through the email alerts Leela subscribes to.
 2. Filters out titles that are not target role families.
 3. Skips postings older than 45 days.
 4. **Checks work authorisation before scoring.** Roles in the USA, Europe and
@@ -23,8 +29,16 @@ active.
    mode only from explicit words. Hybrid is never labelled remote. Anything
    not found stays empty or Unknown.
 7. Scores each job with the repo's 100-point rubric.
-8. Writes rows in score order, capped at 40 per run and 6 per company.
-9. Writes a report page to Notion. The public job log shows counts only.
+8. Labels each row's **Purpose** from the city lists in the config:
+   - `TARGET`: remote, Hyderabad, Bengaluru, Chennai or the Gulf. Leela
+     would accept an offer here.
+   - `PRACTICE`: Pune, Mumbai, Delhi NCR or Kolkata. These are for
+     interview practice only.
+   - `OTHER`: anything else.
+
+   If a posting lists a target city anywhere, it counts as TARGET.
+9. Writes rows in score order, capped at 40 per run and 6 per company.
+10. Writes a report page to Notion. The public job log shows counts only.
 
 ## What it deliberately does NOT do
 
@@ -33,8 +47,10 @@ active.
   Claude daily run or Leela completes the check.
 - **Resume tailoring and application packs.** These stay with the Claude run,
   which has the validation gate and the resume files.
-- **Applying.** Nothing is ever submitted. `Status = APPROVED` is set only by
-  Leela.
+- **Applying.** This runtime never submits anything. A separate Claude run on
+  Leela's laptop submits on company career sites, and only under her standing
+  rule (SYSTEM_SPEC §11a: score of 75 or more, company GENUINE, posting still
+  live, every answer known) or when she has set `Status = APPROVED`.
 
 ## One-time setup (about 10 minutes)
 

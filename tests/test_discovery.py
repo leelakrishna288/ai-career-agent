@@ -298,7 +298,16 @@ def test_pipeline_cap_and_write_errors_are_reported(profile):
 def test_config_loads_shipped_file(repo_root):
     cfg = DiscoveryConfig.load(repo_root / "config" / "discovery.yaml")
     assert len(cfg.boards) >= 20
-    assert {b.platform for b in cfg.boards} == {"greenhouse", "lever", "ashby"}
+    assert {b.platform for b in cfg.boards} == {
+        "greenhouse",
+        "lever",
+        "ashby",
+        "himalayas",
+        "remotive",
+    }
+    assert sum(b.platform == "remotive" for b in cfg.boards) == 1  # Remotive: <=4 fetches/day
+    assert "pune" in cfg.practice_locations and "hyderabad" in cfg.target_locations
+    assert not set(cfg.practice_locations) & set(cfg.target_locations)
     assert "India" in cfg.allowed_countries
 
 
@@ -575,3 +584,139 @@ def test_skill_terms_match_whole_words_only_found_in_live_data():
     assert "c++" in req and "node.js" in req
     req, _ = extract_skills("We use Rust and Scala.")
     assert {"rust", "scala"} <= set(req)
+
+
+# -- remote-job boards and location purpose (2026-09-17) -----------------------
+HIMALAYAS_JOB = {
+    "title": "Backend Engineer (Java)",
+    "companyName": "Remote Co",
+    "locationRestrictions": ["India", "Philippines"],
+    "description": "<p>3+ years of Java and REST APIs.</p>",
+    "pubDate": 1789000000,  # epoch SECONDS (2026-09-10)
+    "applicationLink": "https://himalayas.app/companies/remote-co/jobs/backend-engineer-java",
+    "guid": "https://himalayas.app/companies/remote-co/jobs/backend-engineer-java",
+    "minSalary": None,
+    "maxSalary": None,
+}
+REMOTIVE = {
+    "jobs": [
+        {
+            "id": 55,
+            "url": "https://remotive.com/remote-jobs/software-development/ai-engineer-55",
+            "title": "AI Engineer",
+            "company_name": "Worldwide Ltd",
+            "publication_date": "2026-09-15T10:00:00",
+            "candidate_required_location": "Worldwide",
+            "salary": "",
+            "description": "<p>Build LLM agents in Python.</p>",
+        },
+        {
+            "id": 56,
+            "url": "https://remotive.com/remote-jobs/software-development/backend-56",
+            "title": "Backend Engineer",
+            "company_name": "US Only Inc",
+            "publication_date": "2026-09-15T10:00:00",
+            "candidate_required_location": "USA Only",
+            "salary": "$100k",
+            "description": "<p>Go services.</p>",
+        },
+    ]
+}
+
+
+def test_himalayas_adapter_reads_seconds_and_paginates_until_short_page():
+    client = FakeClient({"https://himalayas.app/jobs/api/search": {"jobs": [HIMALAYAS_JOB]}})
+    out = fetch_board(client, Board("himalayas", "java|India", "Himalayas"))
+    assert len(out) == 1 and len(client.calls) == 1  # short page -> no second request
+    j = out[0]
+    assert j.posted == "2026-09-10"
+    assert j.company == "Remote Co" and j.platform == "Himalayas"
+    assert j.location == "India, Philippines" and j.workplace_hint == "remote"
+    assert "q=java&country=India&page=1" in client.calls[0][1]
+    ex = to_job_posting(j)
+    assert ex.country == "India" and ex.work_mode_label == "Remote-India"
+
+
+def test_himalayas_worldwide_token_and_full_page_fetches_next_page():
+    client = FakeClient({"https://himalayas.app/jobs/api/search": {"jobs": [HIMALAYAS_JOB] * 20}})
+    out = fetch_board(client, Board("himalayas", "ai engineer|", "Himalayas"))
+    assert len(client.calls) == 2 and len(out) == 40
+    assert "q=ai%20engineer&worldwide=true" in client.calls[0][1]
+
+
+def test_remotive_adapter_and_gate():
+    client = FakeClient({"https://remotive.com/api/remote-jobs": REMOTIVE})
+    out = fetch_board(client, Board("remotive", "software-dev", "Remotive"))
+    assert [j.platform for j in out] == ["Remotive", "Remotive"]
+    ww, us = (to_job_posting(j) for j in out)
+    assert ww.country == "Remote-Worldwide" and ww.work_mode_label == "Remote-Worldwide"
+    assert reachable(ww, {"India"})[0]
+    assert not reachable(us, {"India"})[0]
+
+
+def _raw(location, hint="", extra=None):
+    return RawPosting(
+        company="C",
+        title="Software Engineer",
+        location=location,
+        url="https://x.test/1",
+        external_id="x-1",
+        platform="Greenhouse",
+        workplace_hint=hint,
+        extra_locations=extra or [],
+    )
+
+
+def test_location_purpose_tiers():
+    from career_agent.discovery.locations import OTHER, PRACTICE, TARGET, LocationTiers
+
+    tiers = LocationTiers(
+        ["hyderabad", "bengaluru", "dubai"], ["pune", "gurugram", "kolkata", "delhi"]
+    )
+    assert tiers.purpose(to_job_posting(_raw("Gurugram, Haryana, India"))) == PRACTICE
+    assert tiers.purpose(to_job_posting(_raw("New Delhi, India"))) == PRACTICE
+    assert tiers.purpose(to_job_posting(_raw("Kolkata"))) == PRACTICE
+    assert tiers.purpose(to_job_posting(_raw("Hyderabad, India"))) == TARGET
+    # a target city anywhere in the list wins
+    assert tiers.purpose(to_job_posting(_raw("Pune, India", extra=["Hyderabad"]))) == TARGET
+    assert tiers.purpose(to_job_posting(_raw("India", hint="remote"))) == TARGET
+    assert tiers.purpose(to_job_posting(_raw("Dubai, UAE"))) == TARGET
+    assert tiers.purpose(to_job_posting(_raw("Jaipur, India"))) == OTHER
+    # whole-word only: "Punerla" is not Pune
+    assert tiers.purpose(to_job_posting(_raw("Punerla, India"))) == OTHER
+
+
+def test_pipeline_labels_practice_rows_and_sink_writes_purpose(profile):
+    practice_lever = [
+        dict(LEVER[0], categories={"location": "Pune, India"}, workplaceType="onsite")
+    ]
+    client = FakeClient({"https://api.lever.co/v0/postings/termgrid": practice_lever})
+    cfg = config(
+        boards=[BoardConfig(platform="lever", token="termgrid", company="Termgrid")],
+        target_locations=["hyderabad"],
+        practice_locations=["pune"],
+    )
+    sink = MemorySink()
+    rep = run_discovery(cfg, profile, client, sink, today=TODAY)
+    assert len(sink.records) == 1
+    rec = sink.records[0]
+    assert rec.purpose == "PRACTICE" and "interview practice only" in rec.notes
+    assert rep.recorded[0][6] == "PRACTICE"
+    props = NotionTrackerSink.properties(rec, "2026-09-17")
+    assert props["Purpose"] == {"select": {"name": "PRACTICE"}}
+    assert "PRACTICE" in render_report(rep)
+
+
+def test_aggregator_rows_name_the_board_and_link_back(profile):
+    client = FakeClient({"https://remotive.com/api/remote-jobs": REMOTIVE})
+    cfg = config(
+        boards=[BoardConfig(platform="remotive", token="software-dev", company="Remotive")]
+    )
+    sink = MemorySink()
+    run_discovery(cfg, profile, client, sink, today=TODAY)
+    assert len(sink.records) == 1  # the USA-only role is gated out
+    rec = sink.records[0]
+    assert "via Remotive" in rec.notes and rec.raw.url in rec.notes
+    assert NotionTrackerSink.properties(rec, "2026-09-17")["Platform"] == {
+        "select": {"name": "Remotive"}
+    }

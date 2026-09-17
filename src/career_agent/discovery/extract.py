@@ -9,7 +9,7 @@ than inventing it.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..models import JobPosting, WorkMode
 from ..scoring import AI_TERMS, BACKEND_TERMS, CRITICAL, LEARNABLE
@@ -252,6 +252,7 @@ class Extracted:
     country: str  # Notion Country select value or "Other"/"" when unknown
     work_mode_label: str  # Notion Work Mode select value
     experience_text: str
+    extra_locations: list[str] = field(default_factory=list)
 
 
 def _has_term(text: str, term: str) -> bool:
@@ -363,4 +364,10 @@ def to_job_posting(raw: RawPosting) -> Extracted:
         preferred_skills=preferred,
         description=raw.description[:6000],
     )
-    return Extracted(job=job, country=country, work_mode_label=mode_label, experience_text=phrase)
+    return Extracted(
+        job=job,
+        country=country,
+        work_mode_label=mode_label,
+        experience_text=phrase,
+        extra_locations=list(raw.extra_locations),
+    )

@@ -128,6 +128,7 @@ class NotionTrackerSink:
             "Work Mode": _select(rec.ex.work_mode_label),
             "Platform": _select(rec.raw.platform),
             "Discovered By": _select("Standalone runtime"),
+            "Purpose": _select(rec.purpose),
             "Job URL": {"url": rec.raw.url or None},
             "Canonical URL": {"url": rec.raw.url or None},
             "External Job ID": _text(rec.raw.external_id),
@@ -233,8 +234,8 @@ def render_report(report: RunReport, public: bool = False) -> str:
     lines.append("## New matches (company trust check still pending)")
     if not top:
         lines.append("- None this run.")
-    for company, role, score, decision, url, mode in top:
-        lines.append(f"- {score:.0f} {decision} — {company} — {role} — {mode} — {url}")
+    for company, role, score, decision, url, mode, purpose in top:
+        lines.append(f"- {score:.0f} {decision} — {company} — {role} — {mode} — {purpose} — {url}")
     if report.boards_failed:
         lines.append("## Boards that failed")
         lines += [f"- {b}" for b in report.boards_failed]
@@ -243,7 +244,8 @@ def render_report(report: RunReport, public: bool = False) -> str:
         lines += [f"- {e}" for e in report.write_errors]
     lines.append("## Next action for Leela")
     lines.append(
-        "- Nothing is applied automatically. Review MATCHED rows in Notion after the "
-        "company check, then set Status = APPROVED on the ones you want."
+        "- The Claude daily run checks each company and prepares resumes; the laptop "
+        "submission run then applies to company-portal roles scoring 75+ with a GENUINE "
+        "company (SYSTEM_SPEC 11a). Rows outside that rule need Status = APPROVED."
     )
     return "\n".join(lines) + "\n"
