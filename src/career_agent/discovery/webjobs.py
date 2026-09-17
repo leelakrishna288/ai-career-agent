@@ -92,7 +92,16 @@ def parse_detail(url: str, page: str) -> SiteJob | None:
     loc = ld.get("jobLocation") or {}
     if isinstance(loc, list):
         loc = loc[0] if loc else {}
-    addr = (loc.get("address") or {}) if isinstance(loc, dict) else {}
+    addr = (loc.get("address") or {}) if isinstance(loc, dict) else loc
+    if isinstance(addr, list):
+        addr = addr[0] if addr else {}
+    if isinstance(addr, str):  # some pages publish a plain string address
+        addr = {"addressLocality": addr}
+    if not isinstance(addr, dict):
+        addr = {}
+    country = addr.get("addressCountry") or ""
+    if isinstance(country, dict):
+        country = country.get("name", "")
     site = urlsplit(url).netloc.lower()
     apply_url = ""
     for href, text in anchors(page):
@@ -107,9 +116,9 @@ def parse_detail(url: str, page: str) -> SiteJob | None:
     desc = _MD.sub("", str(ld.get("description") or ""))
     return SiteJob(
         title=str(ld.get("title") or "").strip(),
-        company=str(org.get("name") or "").strip() if isinstance(org, dict) else "",
+        company=(str(org.get("name") or "") if isinstance(org, dict) else str(org)).strip(),
         location=str(addr.get("addressLocality") or "").strip(),
-        country=str(addr.get("addressCountry") or "").strip(),
+        country=str(country).strip(),
         posted=str(ld.get("datePosted") or ""),
         employment_type=str(ld.get("employmentType") or ""),
         description=desc.strip(),

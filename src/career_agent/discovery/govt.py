@@ -250,9 +250,12 @@ def run_govt(
             page = client.get_text(w.url)
         except Exception as exc:
             rep.pages_failed.append(f"{w.org}: {type(exc).__name__}: {str(exc)[:120]}")
+            log.warning("govt page %s not reachable: %s", w.org, type(exc).__name__)
             continue
         rep.pages_ok += 1
-        for lead in scan_page(w.org, w.url, page, w.cs_org, today):
+        found = scan_page(w.org, w.url, page, w.cs_org, today)
+        log.info("govt page %s read: %d candidate links", w.org, len(found))
+        for lead in found:
             if per_org.get(w.org, 0) >= 4:
                 rep.skipped += 1
                 continue

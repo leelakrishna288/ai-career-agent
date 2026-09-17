@@ -49,13 +49,16 @@ cannot trace back.
 ---
 
 
-## Standalone daily discovery (no LLM required)
+## Standalone daily run (no LLM required)
 
-`career-agent discover` pulls employers' public Greenhouse / Lever / Ashby job
-boards, gates on title, freshness and work authorisation, deduplicates, scores
-with the deterministic rubric and writes to a Notion tracker. A GitHub Actions
-schedule runs it daily. Setup and verification notes:
-[docs/STANDALONE_RUNTIME.md](docs/STANDALONE_RUNTIME.md).
+`career-agent daily` runs on GitHub Actions every morning without Claude:
+company ATS boards, remote-job boards, public Telegram channels and job blogs
+→ gates → match score → Notion tracker; a tailored resume (DOCX + text) with
+an **ESTIMATED ATS** score on every new match, marked READY only at ATS ≥ 90
+with the validation gate passed; government IT jobs into a separate tracker;
+link/post safety checks; and a digest with apply links in Notion and email.
+It never submits applications. What is and is not independent, setup and
+limits: [docs/STANDALONE_RUNTIME.md](docs/STANDALONE_RUNTIME.md).
 
 ## Evidence labels
 
@@ -78,8 +81,8 @@ whether it is a gap of weeks or a gap of years.
 ```bash
 $ career-agent profile
 ┌────────────────────┬──────────────────────────────────────────────────┐
-│ LEARNING           │ LangChain, Spring Boot                           │
-│ UNSUPPORTED        │ Kubernetes, Machine learning, Microservices      │
+│ LEARNING           │ Kafka, LangChain, Vector databases               │
+│ UNSUPPORTED        │ Kubernetes, Machine learning, React              │
 └────────────────────┴──────────────────────────────────────────────────┘
 LEARNING and UNSUPPORTED skills are recorded deliberately - the validation
 gate blocks them from ever being printed as competencies.

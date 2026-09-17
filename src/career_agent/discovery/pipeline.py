@@ -223,6 +223,11 @@ def run_discovery(
             continue
         report.boards_ok += 1
         report.fetched += len(postings)
+        log.info(
+            "source %s: %d postings",
+            board.label if board.platform != "jobsite" else board.company,
+            len(postings),
+        )
         community = board.platform in COMMUNITY
         for raw in postings:
             if raw.category == "govt":

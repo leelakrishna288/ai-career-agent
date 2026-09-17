@@ -320,9 +320,11 @@ def daily(
             result.pending = sink.pending_rows(since(today))
         except Exception as exc:
             result.errors.append(f"reading pending rows: {exc}")
+    # Government sites are often slow or down: fail fast instead of retrying.
+    govt_client = UrllibJsonClient(timeout=15, retries=1)
     govt = run_govt(
         cfg.govt_watch,
-        client,
+        govt_client,
         report.govt_leads,
         govt_sink,
         today=today,

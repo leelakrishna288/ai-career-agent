@@ -421,6 +421,17 @@ def test_jobsite_listing_and_detail():
     assert job.apply_url.startswith("https://www.accenture.com/")
     assert job.country == "IN" and job.posted.startswith("2026-08-19")
     assert parse_detail("https://x.test/jobs/abc", "<html>no data</html>") is None
+    odd = (
+        '<script type="application/ld+json">{"@graph": [{"@type": "JobPosting", "title": "SE",'
+        ' "hiringOrganization": "Zeta", "jobLocation": [{"address": "Pune, India"}]}]}</script>'
+        '<script type="application/ld+json">not json</script>'
+        '<a href="https://zeta.example/careers/1">Apply now</a>'
+    )
+    z = parse_detail("https://x.test/jobs/abc", odd)
+    assert z and z.company == "Zeta" and z.location == "Pune, India"
+    assert z.apply_url == "https://zeta.example/careers/1"
+    odd2 = odd.replace('"Pune, India"', '{"addressCountry": {"name": "India"}}')
+    assert parse_detail("https://x.test/jobs/abc", odd2).country == "India"
 
 
 def test_fetch_jobsite_respects_robots_and_uses_employer_link():
@@ -930,7 +941,7 @@ def _cli_config(tmp_path, notion_block=""):
 
 
 class CliClient(HtmlClient):
-    instance = None
+    instances: list = []
 
     def __init__(self, *a, **k):
         routes = {
@@ -945,7 +956,7 @@ class CliClient(HtmlClient):
             routes,
             today=None,
         )
-        CliClient.instance = self
+        CliClient.instances.append(self)
 
     def post_multipart(self, *a, **k):
         return {}
@@ -1012,7 +1023,7 @@ def test_cli_daily_dry_run_and_notion(tmp_path, monkeypatch):
     )
     assert res2.exit_code == 0, res2.output
     assert "Digest emailed" in res2.output and sent["args"][2] == "me@x"
-    urls = [c[1] for c in CliClient.instance.calls]
+    urls = [c[1] for inst in CliClient.instances for c in inst.calls]
     assert any("/data_sources/gds/query" in u for u in urls)
 
     res3 = runner.invoke(
