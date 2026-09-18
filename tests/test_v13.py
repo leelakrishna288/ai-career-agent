@@ -801,6 +801,15 @@ def test_daily_resumes_digest_and_notion_attachment(real):
     assert attached, OkAttach.seen
     assert attached[-1][0] == "3debe82cb5588160904fcaf9085ed447"
     assert attached[-1][1].endswith(".docx") and attached[-1][2] > 0
+    # SYSTEM_SPEC v1.8 13.3: with the attachment confirmed, the row may claim it
+    props = [c[2]["properties"] for c in fake.calls if c[0] == "PATCH" and "/pages/" in c[1]]
+    assert any(
+        pr.get("Status", {}).get("select", {}).get("name") == "RESUME_PREPARED" for pr in props
+    ), props
+    assert all(
+        "attached to this row" in pr["Resume File"]["rich_text"][0]["text"]["content"]
+        for pr in props
+    )
 
     digest = build_digest("2026-09-17", rep, result, None)
     assert "Apply now" in digest and "Acme AI" in digest
@@ -842,6 +851,13 @@ def test_daily_resume_upload_failure_falls_back_to_text(real):
     ]
     assert any("could not be attached to this row" in t for t in texts)
     assert not result.errors
+    # SYSTEM_SPEC v1.8 13.3: no attachment, so the row must not claim a prepared resume
+    props = [c[2]["properties"] for c in fake.calls if c[0] == "PATCH" and "/pages/" in c[1]]
+    assert props, fake.calls
+    assert all("Status" not in pr for pr in props), props
+    assert all(
+        "NOT attached" in pr["Resume File"]["rich_text"][0]["text"]["content"] for pr in props
+    )
 
 
 def test_digest_sections_with_govt_and_pending(real):
