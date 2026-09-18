@@ -1,0 +1,90 @@
+name: Skill gap radar
+
+# Reads Missing Skills from the Notion Application Tracker, ranks the gaps by
+# frequency x match quality, and commits the report to 07_Learning/.
+# Closes the SYSTEM_SPEC 23 loop: gaps were recorded but never read back.
+#
+# Weekly on Sunday 02:00 UTC (07:30 IST) - the ranking only moves when new rows
+# arrive, so daily would be noise. Read-only against Notion.
+# Secret required: NOTION_TOKEN (already set).
+
+on:
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: skill-gap-radar
+  cancel-in-progress: false
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rank the gaps
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sys, urllib.request
+          sys.path.insert(0, "scripts")
+          from skill_gap_radar import rank, render
+          from notion_tracker_backup import fetch_all, flatten_page, notion_query
+
+          rows = [flatten_page(p) for p in fetch_all(notion_query(os.environ["NOTION_TOKEN"]))]
+          scored = []
+          for r in rows:
+              try:
+                  score = float(r.get("Match Score") or 0)
+              except ValueError:
+                  score = 0.0
+              if score > 0 and r.get("Missing Skills"):
+                  scored.append({"Company": r.get("Company", "?"),
+                                 "Match Score": score,
+                                 "Missing Skills": r["Missing Skills"]})
+          if not scored:
+              print("No scored rows with Missing Skills - nothing to rank.", file=sys.stderr)
+              raise SystemExit(2)
+
+          ranked = rank(scored)
+          from datetime import datetime, timezone
+          stamp = datetime.now(tz=timezone.utc).date().isoformat()
+          os.makedirs("07_Learning", exist_ok=True)
+          path = f"07_Learning/SKILL_GAP_RADAR.md"
+          with open(path, "w", encoding="utf-8") as fh:
+              fh.write(f"# Skill Gap Radar - {stamp}\n\n")
+              fh.write(f"{len(scored)} scored rows, {len(ranked)} distinct gaps. "
+                       "Weight = sum of (match score / 100) over the roles wanting that gap, "
+                       "so a gap on an 85-match role counts more than the same gap on a 62-match role.\n\n")
+              fh.write(render(ranked, top=15))
+              fh.write("\n\nRanking only. What to study is Leela's decision.\n")
+          print(f"Wrote {path}: {len(scored)} rows, {len(ranked)} gaps")
+          print(render(ranked, top=5))
+          PY
+
+      - name: Commit the report
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain 07_Learning)" ]; then
+            echo "Ranking unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 07_Learning
+          git commit -m "chore(learning): skill gap radar $(date -u +%Y-%m-%d)"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
