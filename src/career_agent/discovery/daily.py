@@ -74,6 +74,7 @@ def prepare_resumes(
 ) -> None:
     tailor = ResumeTailor(profile)
     scorer = Scorer(profile)
+    would_have_applied = 0
     todo = [(r, ref) for r, ref in report.records if _needs_resume(r)]
     todo.sort(key=lambda x: -x[0].analysis.score)
     for rec, ref in todo[: cfg.max_resumes_per_run]:
@@ -86,6 +87,17 @@ def prepare_resumes(
             # the auto-submit bar however high the number looks.
             measurable = resume.ats is not None and resume.ats.confidence != "LOW"
             ready = resume.ready(cfg.min_ats)
+            would_apply = (
+                ready
+                and rec.analysis.score >= cfg.auto_submit_min_match
+                and rec.raw.platform in EMPLOYER_PLATFORMS
+                and measurable
+            )
+            # The kill switch is applied here, at the only place eligibility is ever
+            # decided, so nothing downstream can route around it.
+            eligible = would_apply and cfg.auto_apply.enabled
+            if would_apply:
+                would_have_applied += 1
             filename = resume_filename(resume)
             docx = to_docx(resume, profile)
             outcome = ResumeOutcome(
@@ -98,10 +110,7 @@ def prepare_resumes(
                 ready=ready,
                 filename=filename,
                 missing=list(resume.ats.missing_required if resume.ats else []),
-                auto_submit_eligible=ready
-                and rec.analysis.score >= cfg.auto_submit_min_match
-                and rec.raw.platform in EMPLOYER_PLATFORMS
-                and measurable,
+                auto_submit_eligible=eligible,
                 docx=docx,
                 board_copy=rec.raw.platform not in EMPLOYER_PLATFORMS,
             )
@@ -116,6 +125,11 @@ def prepare_resumes(
         except Exception as exc:
             outcome.error = str(exc)[:200]
             result.errors.append(f"Notion resume write {job.company}: {exc}")
+    if not cfg.auto_apply.enabled:
+        log.warning(
+            "auto-apply disabled by config - %d rows eligible, 0 submitted",
+            would_have_applied,
+        )
 
 
 def _landed(attached: bool) -> str:

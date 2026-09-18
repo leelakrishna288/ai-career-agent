@@ -146,6 +146,12 @@ min_ats: 90
 auto_submit_min_match: 80
 max_resumes_per_run: 10
 
+# Hard switch for the SYSTEM_SPEC 11a auto-apply rule. While this is false no row is
+# reported as clear to submit, whatever it scores.
+# paused 2026-09-18 by Leela until the resume is finalised
+auto_apply:
+  enabled: false
+
 # Non-secret Notion targets (ids are not credentials; the token stays a secret).
 notion:
   report_page_id: 3debe82c-b558-8160-904f-caf9085ed447   # "Daily Reports"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -41,6 +42,17 @@ class NotionTargets(BaseModel):
     govt_data_source_id: str = ""
 
 
+class AutoApplyConfig(BaseModel):
+    """The hard switch for SYSTEM_SPEC 11a auto-apply.
+
+    Defaults to True so the flag alone changes nothing; config/discovery.yaml and the
+    AUTO_APPLY_ENABLED environment variable decide. When False no row may be reported
+    as clear to submit, whatever its score.
+    """
+
+    enabled: bool = True
+
+
 class DiscoveryConfig(BaseModel):
     boards: list[BoardConfig] = Field(default_factory=list)
     include_titles: list[str] = Field(default_factory=list)
@@ -71,6 +83,7 @@ class DiscoveryConfig(BaseModel):
     # Resume and submission gates (Leela, 2026-09-17).
     min_ats: float = 90.0
     auto_submit_min_match: float = 80.0
+    auto_apply: AutoApplyConfig = Field(default_factory=AutoApplyConfig)
     max_resumes_per_run: int = 10
     # Government IT jobs (separate tracker).
     govt_watch: list[GovtWatch] = Field(default_factory=list)
@@ -80,7 +93,14 @@ class DiscoveryConfig(BaseModel):
 
     @classmethod
     def load(cls, path: Path | str) -> DiscoveryConfig:
-        return cls.model_validate(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+        cfg = cls.model_validate(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
+        override = os.environ.get("AUTO_APPLY_ENABLED")
+        if override is not None and override.strip():
+            # An unrecognised value disables rather than enables: a typo in the kill
+            # switch must fail closed.
+            on = override.strip().lower() in {"1", "true", "yes", "on"}
+            cfg = cfg.model_copy(update={"auto_apply": AutoApplyConfig(enabled=on)})
+        return cfg
 
 
 @dataclass

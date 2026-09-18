@@ -28,6 +28,7 @@ from career_agent.discovery.notion_sink import (
     page_id_of,
 )
 from career_agent.discovery.pipeline import (
+    AutoApplyConfig,
     BoardConfig,
     DiscoveryConfig,
     GovtWatch,
@@ -760,6 +761,82 @@ def gh_board(jd=LONG_JD, title="Software Engineer, Java (GenAI)"):
             },
         ]
     }
+
+
+# A JD naming enough skills to be measurable (>= MIN_JD_SKILLS), all of which the
+# fixture profile actually holds - so the row clears READY, match and confidence and
+# would genuinely be auto-apply eligible. The kill switch is the only thing stopping it.
+RICH_JD = (
+    "Requirements\n- 3+ years of experience building backend services in Java\n"
+    "- REST APIs, SQL, Python, LLM APIs, RAG, MCP, microservices, Docker, Kubernetes, "
+    "AWS, Spring Boot, PostgreSQL\n"
+    + "You will design and operate services with our platform team. "
+    * 10
+)
+
+
+def _run_with_auto_apply(real, enabled):
+    """Run the resume stage over one genuinely eligible posting."""
+    cfg = DiscoveryConfig(
+        boards=[BoardConfig(platform="greenhouse", token="acme", company="Acme AI")],
+        include_titles=["engineer"],
+        target_locations=["hyderabad"],
+        # this posting scores 79.8; the switch is what this test is about, not the
+        # threshold, so drop the bar far enough that the row genuinely qualifies
+        auto_submit_min_match=75.0,
+        auto_apply=AutoApplyConfig(enabled=enabled),
+    )
+    rep = run_discovery(
+        cfg,
+        real,
+        HtmlClient({}, {"https://boards-api.greenhouse.io/v1/boards/acme/": gh_board(jd=RICH_JD)}),
+        MemorySink(),
+        today=TODAY,
+    )
+    result = DailyResult()
+    prepare_resumes(rep, real, cfg, None, result)
+    return result
+
+
+def test_auto_apply_kill_switch_blocks_an_otherwise_eligible_row(real, caplog):
+    """Paused 2026-09-18: with the switch off nothing may be reported as clear to submit."""
+    import logging
+
+    from career_agent.discovery.pipeline import RunReport
+
+    # 1. with the switch ON, this posting really does produce an eligible row -
+    #    otherwise the OFF assertion below would prove nothing.
+    on = _run_with_auto_apply(real, True)
+    assert any(r.auto_submit_eligible for r in on.resumes), [
+        (r.company, r.ready, r.ats, r.score) for r in on.resumes
+    ]
+
+    # 2. same input, switch OFF: not one row may be eligible.
+    with caplog.at_level(logging.WARNING, logger="career_agent.discovery.daily"):
+        off = _run_with_auto_apply(real, False)
+    assert off.resumes, "no resumes produced; the test would be vacuous"
+    assert not any(r.auto_submit_eligible for r in off.resumes)
+
+    # 3. and it says so, naming how many it withheld
+    assert any(
+        "auto-apply disabled by config" in m and "0 submitted" in m for m in caplog.messages
+    ), caplog.messages
+    assert any("1 rows eligible" in m for m in caplog.messages), caplog.messages
+
+    # 4. the digest must not advertise the auto-submit bar while paused
+    digest = build_digest("2026-09-18", RunReport("2026-09-18"), off, None)
+    assert "meets auto-submit bar" not in digest
+
+
+def test_auto_apply_defaults_to_enabled_so_the_flag_alone_changes_nothing():
+    assert AutoApplyConfig().enabled is True
+    assert DiscoveryConfig().auto_apply.enabled is True
+
+
+def test_shipped_config_has_auto_apply_paused():
+    """config/discovery.yaml is the live switch; it must stay off until Leela says otherwise."""
+    cfg = DiscoveryConfig.load(Path("config/discovery.yaml"))
+    assert cfg.auto_apply.enabled is False
 
 
 def test_daily_resumes_digest_and_notion_attachment(real):
