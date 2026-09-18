@@ -41,7 +41,7 @@ jobs:
           python - <<'PY'
           import json, os, sys, urllib.request
           sys.path.insert(0, "scripts")
-          from skill_gap_radar import rank, render
+          from skill_gap_radar import pending_packs, rank, render, render_queue
           from notion_tracker_backup import fetch_all, flatten_page, notion_query
 
           rows = [flatten_page(p) for p in fetch_all(notion_query(os.environ["NOTION_TOKEN"]))]
@@ -73,6 +73,29 @@ jobs:
               fh.write("\n\nRanking only. What to study is Leela's decision.\n")
           print(f"Wrote {path}: {len(scored)} rows, {len(ranked)} gaps")
           print(render(ranked, top=5))
+
+          # SYSTEM_SPEC 9: every D-class gap deserves a learning pack. Nothing was
+          # turning the ranking into work, so the plan stayed hand-picked. This names
+          # the packs that do not exist yet; it never writes one, because a 9-component
+          # pack is authored teaching material and this runtime has no model behind it.
+          TOP = 10
+          have = [
+              f for f in os.listdir("07_Learning")
+              if f.lower().endswith(".md")
+              and f not in {"SKILL_GAP_RADAR.md", "LEARNING_QUEUE.md"}
+          ]
+          queue = pending_packs(ranked, have, top=TOP)
+          qpath = "07_Learning/LEARNING_QUEUE.md"
+          with open(qpath, "w", encoding="utf-8") as fh:
+              fh.write(f"# Learning queue - {stamp}\n\n")
+              fh.write(
+                  f"Packs owed under SYSTEM_SPEC 9, from the top {TOP} gaps in "
+                  "SKILL_GAP_RADAR.md. Regenerated weekly; write a pack and it leaves "
+                  "this list.\n\n"
+              )
+              fh.write(render_queue(queue, top=TOP))
+              fh.write("\n")
+          print(f"Wrote {qpath}: {len(queue)} pack(s) owed of the top {TOP}")
           PY
 
       - name: Commit the report

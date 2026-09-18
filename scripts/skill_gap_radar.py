@@ -18,6 +18,7 @@ this only stops the ranking being guesswork.
 
 Stdlib only, pure functions, no network in the ranking path.
 """
+
 from __future__ import annotations
 
 import re
@@ -169,4 +170,68 @@ def render(ranked: list[Gap], top: int = 12) -> str:
     for i, g in enumerate(ranked[:top], 1):
         who = ", ".join(g.roles[:4]) + (" …" if g.count > 4 else "")
         lines.append(f"| {i} | {g.skill} | {g.count} | {g.weight:.2f} | {who} |")
+    return "\n".join(lines)
+
+
+# SYSTEM_SPEC §9 standing priority list, in this module's canonical names. A gap on this
+# list is worth a pack even at a lower weight: it is where Leela is deliberately heading,
+# not merely what this quarter's postings happened to ask for.
+STANDING_PRIORITY = frozenset(
+    {
+        "llm fundamentals",
+        "prompt engineering",
+        "langchain/langgraph",
+        "llm observability",
+        "vector database",
+        "claude",
+        "aws hands-on",
+    }
+)
+
+
+def slug(skill: str) -> str:
+    """Filename stem for a gap's learning pack (§9: `07_Learning/<skill>.md`)."""
+    out = re.sub(r"[^a-z0-9]+", "-", skill.lower()).strip("-")
+    return out or "unnamed"
+
+
+def pending_packs(ranked: list[Gap], existing: list[str], top: int = 10) -> list[Gap]:
+    """Of the `top` highest-ranked gaps, those with no learning pack written yet.
+
+    `existing` is whatever `07_Learning/` already holds - file names or bare stems,
+    with or without a `.md` suffix. Matching is on the slug, so "AWS hands-on" and
+    "aws-hands-on.md" are the same pack.
+
+    The window is applied before the filter, so the queue shrinks as packs get
+    written rather than pulling an endless tail of low-weight gaps forward.
+    """
+    have = {slug(e[:-3] if e.lower().endswith(".md") else e) for e in existing}
+    return [g for g in ranked[:top] if slug(g.skill) not in have]
+
+
+def render_queue(pending: list[Gap], top: int = 10) -> str:
+    """The work queue §9 implies: which packs to write, in what order, and where.
+
+    Deliberately does not write the packs. A §9 pack is nine pieces of authored
+    teaching material; the daily runtime has no model behind it and must never
+    fabricate one. This names the work and leaves the writing to Claude or Leela.
+    """
+    if not pending:
+        return f"Every gap in the top {top} already has a learning pack. Nothing queued."
+    lines = [
+        "| # | Gap | Weighted | Roles | Pack to create | §9 standing |",
+        "|---|---|---|---|---|---|",
+    ]
+    for i, g in enumerate(pending, 1):
+        standing = "yes" if g.skill in STANDING_PRIORITY else ""
+        lines.append(
+            f"| {i} | {g.skill} | {g.weight:.2f} | {g.count} | "
+            f"`07_Learning/{slug(g.skill)}.md` | {standing} |"
+        )
+    lines += [
+        "",
+        "Each pack needs all nine §9 components: concept note, short notes, practical",
+        "example, hands-on exercise, coding exercise, mini project, 10 interview questions",
+        "with model answers, 3 debugging scenarios, revision checklist.",
+    ]
     return "\n".join(lines)
