@@ -20,6 +20,7 @@ a 400 on step 1 if the content type is rejected, and a 413/400 on step 2 if
 the file exceeds the workspace's per-file limit (5 MiB on free workspaces).
 Both are reported, never swallowed.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,9 +52,9 @@ def _urllib_transport(
 ) -> tuple[int, bytes]:
     if not url.startswith("https://"):
         raise NotionAttachError(f"refusing a non-https URL: {url}")
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310 - https enforced above
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310  # nosec B310
             return resp.status, resp.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
@@ -180,9 +181,18 @@ class NotionAttacher:
             content = fh.read()
         if not content:
             raise NotionAttachError(f"resume file is empty: {path}")
-        filename = os.path.basename(path)
-        content_type = guess_content_type(filename)
+        return self.upload_resume_bytes(page_id, os.path.basename(path), content)
 
+    def upload_resume_bytes(self, page_id: str, filename: str, content: bytes) -> str:
+        """Attach `content` to `page_id` without touching the filesystem.
+
+        The daily run renders the DOCX in memory and never writes it to disk,
+        so it has bytes rather than a path. Same three calls, same contract,
+        same NotionAttachError on failure.
+        """
+        if not content:
+            raise NotionAttachError(f"resume content is empty: {filename}")
+        content_type = guess_content_type(filename)
         upload_id, upload_url = self.create_upload(filename, content_type)
         self.send_bytes(upload_url, filename, content, content_type)
         self.attach(page_id, upload_id, filename)

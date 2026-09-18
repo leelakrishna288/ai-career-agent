@@ -6,8 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-import notion_resume_attachment as na
 import pytest
+
+from career_agent.discovery import notion_resume_attachment as na
 
 UPLOAD_OK = (
     200,

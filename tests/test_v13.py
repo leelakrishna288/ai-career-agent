@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from career_agent.ats import ATSEstimator
+from career_agent.discovery import notion_sink as ns
 from career_agent.discovery import safety
 from career_agent.discovery.daily import (
     DailyResult,
@@ -678,11 +679,30 @@ class NotionFake:
         return {"status": "uploaded"}
 
 
+class OkAttach:
+    """Offline stand-in for NotionAttacher: records calls, never touches the network."""
+
+    seen: list = []
+
+    def __init__(self, token):
+        OkAttach.seen.append(token)
+
+    def upload_resume_bytes(self, page_id, filename, content):
+        OkAttach.seen.append((page_id, filename, len(content)))
+        return "up_1"
+
+
+class FailAttach:
+    def __init__(self, token):
+        pass
+
+    def upload_resume_bytes(self, page_id, filename, content):
+        raise ns.NotionAttachError("notion said no")
+
+
 def test_tracker_sink_resume_helpers():
     fake = NotionFake()
     sink = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None)
-    assert sink.upload_file("a.docx", b"123", "x/y") == "fu-1"
-    assert fake.uploads[0][0].endswith("/file_uploads/fu-1/send")
     sink.update_properties("https://notion.so/Row-3debe82cb5588160904fcaf9085ed447", {"x": 1})
     assert fake.calls[-1][1].endswith("/pages/3debe82cb5588160904fcaf9085ed447")
     sink.append_blocks("p1", [{"type": "divider", "divider": {}}] * 95)
@@ -693,19 +713,18 @@ def test_tracker_sink_resume_helpers():
     sink.write_report("parent", "Daily", long_md)
     assert any(c[1].endswith("/blocks/p-new/children") for c in fake.calls)
 
-    class NoMultipart:
-        def request(self, *a, **k):
-            return {"id": "fu"}
 
-    with pytest.raises(RuntimeError):
-        NotionTrackerSink(NoMultipart(), "t", "ds", sleep=lambda s: None).upload_file("a", b"", "x")
+def test_attach_resume_reports_success_and_failure():
+    fake = NotionFake()
+    OkAttach.seen.clear()
+    ok = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None, attacher=OkAttach)
+    row = "https://notion.so/Row-3debe82cb5588160904fcaf9085ed447"
+    assert ok.attach_resume(row, "a.docx", b"123") is True
+    assert OkAttach.seen[0] == "t"  # the raw token, not the Bearer header
+    assert OkAttach.seen[1] == ("3debe82cb5588160904fcaf9085ed447", "a.docx", 3)
 
-    class NoId:
-        def request(self, *a, **k):
-            return {}
-
-    with pytest.raises(RuntimeError):
-        NotionTrackerSink(NoId(), "t", "ds", sleep=lambda s: None).upload_file("a", b"", "x")
+    bad = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None, attacher=FailAttach)
+    assert bad.attach_resume("p1", "a.docx", b"123") is False
 
 
 # -- daily run -----------------------------------------------------------------
@@ -761,7 +780,7 @@ def test_daily_resumes_digest_and_notion_attachment(real):
     assert ready[0].auto_submit_eligible == (ready[0].score >= 80)
 
     fake = NotionFake()
-    tracker = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None)
+    tracker = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None, attacher=OkAttach)
     rep2 = run_discovery(
         cfg,
         real,
@@ -776,8 +795,12 @@ def test_daily_resumes_digest_and_notion_attachment(real):
     assert patches and "ATS Estimate" in patches[0][2]["properties"]
     appended = [c for c in fake.calls if c[1].endswith("/children")]
     kinds = [b["type"] for c in appended for b in c[2]["children"]]
-    assert "callout" in kinds and "file" in kinds and "heading_2" in kinds
-    assert fake.uploads
+    assert "callout" in kinds and "heading_2" in kinds
+    # the DOCX went to the row as a property, with real bytes behind it
+    attached = [s for s in OkAttach.seen if isinstance(s, tuple)]
+    assert attached, OkAttach.seen
+    assert attached[-1][0] == "3debe82cb5588160904fcaf9085ed447"
+    assert attached[-1][1].endswith(".docx") and attached[-1][2] > 0
 
     digest = build_digest("2026-09-17", rep, result, None)
     assert "Apply now" in digest and "Acme AI" in digest
@@ -786,9 +809,7 @@ def test_daily_resumes_digest_and_notion_attachment(real):
 
 
 def test_daily_resume_upload_failure_falls_back_to_text(real):
-    class NoUpload(NotionFake):
-        def post_multipart(self, *a, **k):
-            raise HttpError(400, "u", "bad")
+    # the attacher fails; the row must fall back to resume text only
 
     cfg = DiscoveryConfig(
         boards=[BoardConfig(platform="greenhouse", token="acme", company="Acme AI")],
@@ -802,10 +823,14 @@ def test_daily_resume_upload_failure_falls_back_to_text(real):
         today=TODAY,
     )
     rep.records = [(rec, "pid") for rec, _ in rep.records]
-    fake = NoUpload()
+    fake = NotionFake()
     result = DailyResult()
     prepare_resumes(
-        rep, real, cfg, NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None), result
+        rep,
+        real,
+        cfg,
+        NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None, attacher=FailAttach),
+        result,
     )
     texts = [
         rt["text"]["content"]
@@ -815,7 +840,7 @@ def test_daily_resume_upload_failure_falls_back_to_text(real):
         if b["type"] == "paragraph"
         for rt in b["paragraph"]["rich_text"]
     ]
-    assert any("DOCX upload failed" in t for t in texts)
+    assert any("could not be attached to this row" in t for t in texts)
     assert not result.errors
 
 
@@ -970,6 +995,9 @@ def test_cli_daily_dry_run_and_notion(tmp_path, monkeypatch):
     from career_agent.discovery import http as http_mod
 
     monkeypatch.setattr(http_mod, "UrllibJsonClient", CliClient)
+    # the attacher carries its own transport, so it has to be faked too or the
+    # CLI path would reach api.notion.com for real
+    monkeypatch.setattr(ns, "NotionAttacher", OkAttach)
     runner = CliRunner()
     prof = str(ROOT / "profile" / "master_profile.yaml")
     out = tmp_path / "out"

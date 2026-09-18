@@ -14,6 +14,7 @@ from typing import Any
 
 from ..models import normalise_role
 from .http import JsonClient
+from .notion_resume_attachment import NotionAttacher, NotionAttachError
 from .pipeline import ExistingKey, NewRecord, RunReport
 
 log = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class NotionTrackerSink:
         data_source_id: str,
         pause: float = 0.35,
         sleep=time.sleep,
+        attacher=None,
     ):  # noqa: ANN001
         if not token:
             raise ValueError("NOTION_TOKEN is not set")
@@ -65,8 +67,10 @@ class NotionTrackerSink:
             "Authorization": f"Bearer {token}",
             "Notion-Version": NOTION_VERSION,
         }
+        self._token = token
         self._pause = pause
         self._sleep = sleep
+        self._attacher = attacher
 
     def _call(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         out = self.client.request(method, f"{API}{path}", body=body, headers=self._headers)
@@ -187,30 +191,21 @@ class NotionTrackerSink:
         for i in range(0, len(blocks), 90):  # Notion accepts at most 100 children per call
             self._call("PATCH", f"/blocks/{pid}/children", {"children": blocks[i : i + 90]})
 
-    def upload_file(self, filename: str, content: bytes, content_type: str) -> str:
-        """Notion direct upload (single part, <20 MB). Returns the file_upload id."""
-        created = (
-            self._call(
-                "POST", "/file_uploads", {"filename": filename, "content_type": content_type}
-            )
-            or {}
-        )
-        upload_id = created.get("id", "")
-        if not upload_id:
-            raise RuntimeError("Notion did not return a file upload id")
-        post = getattr(self.client, "post_multipart", None)
-        if post is None:
-            raise RuntimeError("HTTP client cannot send multipart uploads")
-        post(
-            f"{API}/file_uploads/{upload_id}/send",
-            "file",
-            filename,
-            content,
-            content_type,
-            headers=self._headers,
-        )
-        self._sleep(self._pause)
-        return upload_id
+    def attach_resume(self, page_ref: str, filename: str, content: bytes) -> bool:
+        """Attach the tailored resume DOCX to the row's `Resume Attachment` property.
+
+        Returns True only when Notion confirmed the attachment. A False means the
+        row has no attachment, so the caller must not report the resume as
+        prepared on the assumption that one exists (SYSTEM_SPEC v1.8 13.3).
+        """
+        page_id = page_id_of(page_ref)
+        try:
+            attacher = self._attacher or NotionAttacher  # resolved late, so tests can patch it
+            attacher(self._token).upload_resume_bytes(page_id, filename, content)
+            return True
+        except NotionAttachError as exc:
+            log.warning("resume not attached to %s: %s", page_id, exc)
+            return False
 
     def pending_rows(self, since: str, limit: int = 20) -> list[dict[str, str]]:
         """Rows waiting for an application, newest analysis first (for the digest)."""

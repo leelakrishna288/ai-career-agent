@@ -111,6 +111,10 @@ def prepare_resumes(
             result.errors.append(f"Notion resume write {job.company}: {exc}")
 
 
+def _landed(attached: bool) -> str:
+    return "(attached to this row)" if attached else "(NOT attached - text only)"
+
+
 def _attach(sink, ref, rec, resume, outcome, profile, cfg) -> None:  # noqa: ANN001
     if outcome.ready:
         nxt = f"Resume READY (ATS {outcome.ats:.0f}). " + (
@@ -125,17 +129,21 @@ def _attach(sink, ref, rec, resume, outcome, profile, cfg) -> None:  # noqa: ANN
             + (f" (missing: {', '.join(outcome.missing[:6])})" if outcome.missing else "")
             + ". Decide: skip, or approve anyway."
         )
+    # Attach first: the Status below must not claim a prepared resume unless the
+    # row actually carries the DOCX (SYSTEM_SPEC v1.8 13.3).
+    attached = sink.attach_resume(ref, outcome.filename, outcome.docx)
+
     props: dict[str, Any] = {
         "ATS Estimate": {"number": outcome.ats},
         "Resume Version": {"rich_text": [{"type": "text", "text": {"content": resume.resume_id}}]},
         "Resume File": {
             "rich_text": [
-                {"type": "text", "text": {"content": f"{outcome.filename} (attached on this page)"}}
+                {"type": "text", "text": {"content": f"{outcome.filename} {_landed(attached)}"}}
             ]
         },
         "Next Action": {"rich_text": [{"type": "text", "text": {"content": nxt[:1900]}}]},
     }
-    if outcome.ready and resume.is_final:
+    if outcome.ready and resume.is_final and attached:
         props["Status"] = {"select": {"name": "RESUME_PREPARED"}}
     sink.update_properties(ref, props)
     blocks: list[dict[str, Any]] = [
@@ -155,19 +163,7 @@ def _attach(sink, ref, rec, resume, outcome, profile, cfg) -> None:  # noqa: ANN
         },
         {"type": "paragraph", "paragraph": _rt_links(f"Apply here: {outcome.url}")},
     ]
-    try:
-        upload_id = sink.upload_file(outcome.filename, outcome.docx, DOCX_TYPE)
-        blocks.append(
-            {
-                "type": "file",
-                "file": {
-                    "type": "file_upload",
-                    "file_upload": {"id": upload_id},
-                    "name": outcome.filename,
-                },
-            }
-        )
-    except Exception as exc:  # the text version below is still complete
+    if not attached:  # the text version below is still complete
         blocks.append(
             {
                 "type": "paragraph",
@@ -176,9 +172,10 @@ def _attach(sink, ref, rec, resume, outcome, profile, cfg) -> None:  # noqa: ANN
                         {
                             "type": "text",
                             "text": {
-                                "content": f"DOCX upload failed ({exc}); the full resume text follows."[
-                                    :1900
-                                ]
+                                "content": (
+                                    "The DOCX could not be attached to this row; "
+                                    "the full resume text follows."
+                                )[:1900]
                             },
                         }
                     ]
