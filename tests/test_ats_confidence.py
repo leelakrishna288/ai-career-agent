@@ -1,8 +1,8 @@
 """Tests for ats_confidence - pytest-native, pure functions, no network."""
+
 from __future__ import annotations
 
 import pytest
-
 from ats_confidence import MIN_SKILLS, score_ats
 
 FIXED = {
@@ -82,9 +82,7 @@ def test_thin_jd_scoring_near_100_is_low_confidence() -> None:
     ("required", "matched"),
     [(["Java", "Python"], "Java"), (["Java", "Python", "Go"], "Java Python")],
 )
-def test_greenhouse_exact_fraction_artefacts_are_flagged(
-    required: list[str], matched: str
-) -> None:
+def test_greenhouse_exact_fraction_artefacts_are_flagged(required: list[str], matched: str) -> None:
     """The rows sitting at exactly 50.0 and 66.7 are small-denominator artefacts."""
     result = score_ats(
         required=required, preferred=[], resume_text=matched, unsupported=[], **FIXED
@@ -127,9 +125,7 @@ def test_auto_apply_needs_score_and_confidence() -> None:
     assert high.confidence == "HIGH"
     assert high.auto_apply_eligible
 
-    low = score_ats(
-        required=skills, preferred=["p"], resume_text="s1 s2", unsupported=[], **FIXED
-    )
+    low = score_ats(required=skills, preferred=["p"], resume_text="s1 s2", unsupported=[], **FIXED)
     assert low.score < 90
     assert low.auto_apply_eligible is False
 

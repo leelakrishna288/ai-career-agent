@@ -1,13 +1,13 @@
 """Tests for notion_resume_attachment - pytest-native, fake transport, no network."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 import notion_resume_attachment as na
+import pytest
 
 UPLOAD_OK = (
     200,

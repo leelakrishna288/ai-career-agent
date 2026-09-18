@@ -1,4 +1,5 @@
 """Tests for notion_tracker_backup - pytest-native, no network, no module-level code."""
+
 from __future__ import annotations
 
 import csv
@@ -6,9 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 import notion_tracker_backup as backup
+import pytest
 
 
 def make_page(i: int, archived: bool = False) -> dict[str, Any]:
@@ -22,7 +22,10 @@ def make_page(i: int, archived: bool = False) -> dict[str, Any]:
         "properties": {
             "Company + Role": {"type": "title", "title": [{"plain_text": f"Dscout - SE #{i}"}]},
             "Company": {"type": "rich_text", "rich_text": [{"plain_text": 'Ac"me, Inc\nIndia'}]},
-            "Application ID": {"type": "unique_id", "unique_id": {"prefix": None, "number": 100 + i}},
+            "Application ID": {
+                "type": "unique_id",
+                "unique_id": {"prefix": None, "number": 100 + i},
+            },
             "Match Score": {"type": "number", "number": 88.8},
             "Status": {"type": "select", "select": {"name": "RESUME_PREPARED"}},
             "Decision": {"type": "select", "select": None},
@@ -58,7 +61,10 @@ def fake_query(batches: list[dict[str, Any]]):
         ({"type": "select", "select": {"name": "APPLY"}}, "APPLY"),
         ({"type": "select", "select": None}, ""),
         ({"type": "status", "status": {"name": "READY"}}, "READY"),
-        ({"type": "multi_select", "multi_select": [{"name": "Kafka"}, {"name": "AWS"}]}, "Kafka, AWS"),
+        (
+            {"type": "multi_select", "multi_select": [{"name": "Kafka"}, {"name": "AWS"}]},
+            "Kafka, AWS",
+        ),
         ({"type": "date", "date": {"start": "2026-09-18", "end": None}}, "2026-09-18"),
         (
             {"type": "date", "date": {"start": "2026-09-18", "end": "2026-09-20"}},

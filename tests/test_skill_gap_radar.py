@@ -1,8 +1,8 @@
 """Tests for skill_gap_radar - pytest-native, pure functions, no network."""
+
 from __future__ import annotations
 
 import pytest
-
 from skill_gap_radar import normalise, rank, render
 
 
