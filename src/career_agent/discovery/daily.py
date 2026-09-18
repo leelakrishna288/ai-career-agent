@@ -81,6 +81,10 @@ def prepare_resumes(
         try:
             resume = tailor.tailor(job, scorer.score(job))
             ats = resume.ats.total if resume.ats else 0.0
+            # A LOW-confidence estimate is not a measurement: the JD named too few
+            # skills for the denominator to mean anything, so the row must never clear
+            # the auto-submit bar however high the number looks.
+            measurable = resume.ats is not None and resume.ats.confidence != "LOW"
             ready = resume.ready(cfg.min_ats)
             filename = resume_filename(resume)
             docx = to_docx(resume, profile)
@@ -96,7 +100,8 @@ def prepare_resumes(
                 missing=list(resume.ats.missing_required if resume.ats else []),
                 auto_submit_eligible=ready
                 and rec.analysis.score >= cfg.auto_submit_min_match
-                and rec.raw.platform in EMPLOYER_PLATFORMS,
+                and rec.raw.platform in EMPLOYER_PLATFORMS
+                and measurable,
                 docx=docx,
                 board_copy=rec.raw.platform not in EMPLOYER_PLATFORMS,
             )

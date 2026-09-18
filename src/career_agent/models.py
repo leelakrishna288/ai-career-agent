@@ -390,6 +390,9 @@ class ATSEstimate(BaseModel):
 
     total: float
     components: dict[str, float] = Field(default_factory=dict)
+    # HIGH | MEDIUM | LOW. LOW means the JD named too few skills for the score to be a
+    # measurement at all; such a row is never auto-submit eligible.
+    confidence: str = "HIGH"
     missing_required: list[str] = Field(default_factory=list)
     missing_preferred: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)

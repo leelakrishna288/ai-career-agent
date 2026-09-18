@@ -22,6 +22,11 @@ import re
 from .models import ATSEstimate, JobPosting, MasterProfile, TailoredResume
 from .scoring import _contains_term, _norm
 
+# Below this many named skills the keyword denominator is too small to measure: a JD
+# naming two skills scores 100 when both match. Threshold and bands mirror
+# scripts/ats_confidence.py, which found four such artefacts in the live tracker.
+MIN_JD_SKILLS = 8
+
 POINTS = {
     "required_skills": 35.0,
     "preferred_skills": 10.0,
@@ -176,10 +181,23 @@ class ATSEstimator:
         notes.append(
             "Format points assume the generated single-column DOCX (no tables, images or columns)."
         )
+        named = len(req) + len(pref)
+        if named < MIN_JD_SKILLS:
+            confidence = "LOW"
+            notes.append(
+                f"Only {named} skills were named in the posting (minimum {MIN_JD_SKILLS}); "
+                "the denominator is too small to measure, so this estimate is not a "
+                "measurement and the row is excluded from the auto-submit rule."
+            )
+        elif named < MIN_JD_SKILLS * 2:
+            confidence = "MEDIUM"
+        else:
+            confidence = "HIGH"
         total = round(sum(comp.values()), 1)
         return ATSEstimate(
             total=total,
             components={k: round(v, 1) for k, v in comp.items()},
+            confidence=confidence,
             missing_required=miss_req,
             missing_preferred=miss_pref,
             notes=notes,

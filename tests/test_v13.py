@@ -777,7 +777,11 @@ def test_daily_resumes_digest_and_notion_attachment(real):
     assert result.resumes, rep.recorded
     ready = [r for r in result.resumes if r.ready]
     assert ready and ready[0].docx[:2] == b"PK"
-    assert ready[0].auto_submit_eligible == (ready[0].score >= 80)
+    # This JD names 7 skills and no preferred ones - under MIN_JD_SKILLS, so the ATS
+    # estimate is LOW confidence and the row must not clear the auto-submit bar however
+    # high the number is. Without the gate this asserted eligible == (score >= 80).
+    assert ready[0].ats >= 90 and ready[0].score >= 80, (ready[0].ats, ready[0].score)
+    assert ready[0].auto_submit_eligible is False
 
     fake = NotionFake()
     tracker = NotionTrackerSink(fake, "t", "ds", sleep=lambda s: None, attacher=OkAttach)
@@ -858,6 +862,65 @@ def test_daily_resume_upload_failure_falls_back_to_text(real):
     assert all(
         "NOT attached" in pr["Resume File"]["rich_text"][0]["text"]["content"] for pr in props
     )
+
+
+def test_ats_confidence_bands_follow_the_number_of_skills_named():
+    """A thin JD cannot be measured; the bands must not over-block a rich one."""
+    from career_agent.ats import MIN_JD_SKILLS, ATSEstimator
+
+    def posting(name, required, preferred):
+        return JobPosting(
+            company=name,
+            role="Engineer",
+            location="Hyderabad",
+            country="India",
+            url=f"https://x.example/{name}",
+            required_skills=required,
+            preferred_skills=preferred,
+            description="Build services.",
+        )
+
+    pool = [
+        "Java",
+        "SQL",
+        "Python",
+        "REST API",
+        "AWS",
+        "Docker",
+        "Kafka",
+        "Redis",
+        "RAG",
+        "MCP",
+        "Spring Boot",
+        "Kubernetes",
+        "Terraform",
+        "gRPC",
+        "PostgreSQL",
+        "Hibernate",
+    ]
+    thin = posting("thin", pool[:2], [])  # 2  -> LOW
+    mid = posting("mid", pool[:6], pool[6:10])  # 10 -> MEDIUM
+    rich = posting("rich", pool[:10], pool[10:16])  # 16 -> HIGH
+    assert len(thin.required_skills) + len(thin.preferred_skills) < MIN_JD_SKILLS
+    assert MIN_JD_SKILLS <= 10 < MIN_JD_SKILLS * 2
+    assert len(rich.required_skills) + len(rich.preferred_skills) >= MIN_JD_SKILLS * 2
+
+    profile = load_profile(Path("tests/fixtures/profile_fixture.yaml"))
+    est = ATSEstimator(profile)
+    tailor = ResumeTailor(profile)
+    scorer = Scorer(profile)
+
+    def confidence_of(job):
+        return est.estimate(job, tailor.tailor(job, scorer.score(job)))
+
+    thin_est, mid_est, rich_est = confidence_of(thin), confidence_of(mid), confidence_of(rich)
+    assert thin_est.confidence == "LOW"
+    assert mid_est.confidence == "MEDIUM"
+    assert rich_est.confidence == "HIGH"
+    # only the unmeasurable one carries the warning
+    assert any("too small to measure" in n for n in thin_est.notes)
+    assert not any("too small to measure" in n for n in mid_est.notes)
+    assert not any("too small to measure" in n for n in rich_est.notes)
 
 
 def test_digest_names_rows_whose_docx_did_not_attach():
