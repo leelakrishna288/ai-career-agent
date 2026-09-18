@@ -393,6 +393,10 @@ class ATSEstimate(BaseModel):
     # HIGH | MEDIUM | LOW. LOW means the JD named too few skills for the score to be a
     # measurement at all; such a row is never auto-submit eligible.
     confidence: str = "HIGH"
+    # The best total reachable for this JD without claiming anything unsupported:
+    # full marks on every component except keyword coverage, where only skills the
+    # profile can truthfully print count. Measurement only - it gates nothing.
+    ceiling: float = 0.0
     missing_required: list[str] = Field(default_factory=list)
     missing_preferred: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)

@@ -839,6 +839,118 @@ def test_shipped_config_has_auto_apply_paused():
     assert cfg.auto_apply.enabled is False
 
 
+def _estimate(profile, required, preferred):
+    from career_agent.ats import ATSEstimator
+
+    job = JobPosting(
+        company="X",
+        role="Engineer",
+        location="Hyderabad",
+        country="India",
+        url="https://x.example/1",
+        required_skills=required,
+        preferred_skills=preferred,
+        description="Build services.",
+    )
+    resume = ResumeTailor(profile).tailor(job, Scorer(profile).score(job))
+    return job, resume, ATSEstimator(profile).estimate(job, resume)
+
+
+def test_ceiling_is_capped_by_skills_the_profile_cannot_claim():
+    """SYSTEM_SPEC 7 measurement: the ceiling excludes unsupported skills."""
+    profile = load_profile(Path("tests/fixtures/profile_fixture.yaml"))
+    # C# and Node.js are not in the profile; Kubernetes is in it but UNSUPPORTED.
+    _, _, est = _estimate(
+        profile,
+        ["Java", "SQL", "Python", "REST API", "AWS", "Docker", "C#", "Node.js"],
+        ["RAG", "MCP"],
+    )
+    assert est.ceiling >= est.total
+    assert est.ceiling < 100.0, "unsupported skills must hold the ceiling below 100"
+    assert any("cannot truthfully claim" in n for n in est.notes)
+    assert "C#" in " ".join(est.notes) and "Node.js" in " ".join(est.notes)
+
+
+def test_ceiling_exceeds_the_score_when_a_claimable_skill_is_not_printed():
+    """Otherwise the ceiling would be a constant and tell Leela nothing."""
+    from career_agent.ats import ATSEstimator
+
+    profile = load_profile(Path("tests/fixtures/profile_fixture.yaml"))
+    job, resume, before = _estimate(
+        profile, ["Java", "SQL", "Python", "REST API", "AWS", "Docker"], ["RAG", "MCP"]
+    )
+    # drop a skill the profile CAN truthfully print, as an under-tailored resume would
+    stripped = resume.model_copy(deep=True)
+    stripped.skills = {
+        g: [s for s in items if s.lower() != "docker"] for g, items in stripped.skills.items()
+    }
+    for e in stripped.experience:
+        e.bullets = [b for b in e.bullets if "docker" not in b.lower()]
+    for pr in stripped.projects:
+        pr.stack = pr.stack.replace("Docker", "").replace("docker", "")
+        pr.bullets = [b for b in pr.bullets if "docker" not in b.lower()]
+    after = ATSEstimator(profile).estimate(job, stripped)
+
+    assert "Docker" in after.missing_required, after.missing_required
+    assert after.ceiling > after.total, (after.total, after.ceiling)
+    assert before.total > after.total
+
+
+def test_ceiling_and_confidence_do_not_move_the_ready_gate():
+    """Task: measurement only. READY must still be total >= min_ats and nothing else."""
+    profile = load_profile(Path("tests/fixtures/profile_fixture.yaml"))
+    _, resume, est = _estimate(
+        profile, ["Java", "SQL", "Python", "REST API", "AWS", "Docker"], ["RAG", "MCP"]
+    )
+    resume.ats = est
+    for minimum in (50.0, 90.0, 99.0):
+        assert resume.ready(minimum) == (est.total >= minimum and resume.is_final)
+
+
+def test_low_confidence_row_is_never_auto_apply_eligible(real):
+    """Four live rows carried small-denominator artefacts (ATS 100 vs match 71, ATS 0,
+    two at exactly 50.0, two at 66.7). A score from a JD naming < 8 skills is not a
+    measurement, so it must never clear the bar however high it looks."""
+    from career_agent.ats import MIN_JD_SKILLS
+
+    thin_jd = (
+        "Requirements"
+        + chr(10)
+        + "- 3+ years of experience in Java"
+        + chr(10)
+        + "- SQL"
+        + chr(10)
+        + "Operate our platform. " * 30
+    )
+    cfg = DiscoveryConfig(
+        boards=[BoardConfig(platform="greenhouse", token="acme", company="Acme AI")],
+        include_titles=["engineer"],
+        target_locations=["hyderabad"],
+        auto_submit_min_match=1.0,  # remove every other reason to be ineligible
+        min_ats=0.0,
+        auto_apply=AutoApplyConfig(enabled=True),
+    )
+    rep = run_discovery(
+        cfg,
+        real,
+        HtmlClient({}, {"https://boards-api.greenhouse.io/v1/boards/acme/": gh_board(jd=thin_jd)}),
+        MemorySink(),
+        today=TODAY,
+    )
+    result = DailyResult()
+    prepare_resumes(rep, real, cfg, None, result)
+    assert result.resumes, "no resumes produced; the test would be vacuous"
+    for r in result.resumes:
+        assert r.ready, "gates were opened, so only confidence can be withholding eligibility"
+        assert r.auto_submit_eligible is False, (r.company, r.ats, r.score)
+
+    # and the reason really is the denominator, not something else
+    profile = load_profile(Path("tests/fixtures/profile_fixture.yaml"))
+    _, _, est = _estimate(profile, ["Java", "SQL"], [])
+    assert len(["Java", "SQL"]) < MIN_JD_SKILLS
+    assert est.confidence == "LOW"
+
+
 def test_daily_resumes_digest_and_notion_attachment(real):
     cfg = DiscoveryConfig(
         boards=[BoardConfig(platform="greenhouse", token="acme", company="Acme AI")],

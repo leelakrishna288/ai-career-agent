@@ -173,6 +173,24 @@ class ATSEstimator:
                 comp["required_skills"] / POINTS["required_skills"]
             )
 
+        # Ceiling: assume every missing skill the profile can truthfully print gets
+        # printed. Skills she does not hold stay missing, so they cap the ceiling.
+        def _claimable(term: str) -> bool:
+            skill = self.profile.skill(_norm(term))
+            return bool(skill and skill.printable)
+
+        unsup_req = [t for t in miss_req if not _claimable(t)]
+        unsup_pref = [t for t in miss_pref if not _claimable(t)]
+        ceil_comp = dict(comp)
+        if req:
+            ceil_comp["required_skills"] = (
+                POINTS["required_skills"] * (len(req) - len(unsup_req)) / len(req)
+            )
+        if pref:
+            ceil_comp["preferred_skills"] = (
+                POINTS["preferred_skills"] * (len(pref) - len(unsup_pref)) / len(pref)
+            )
+
         comp["title"] = self._title(job.role, resume.headline)
         comp["experience"] = self._experience(job, notes)
         comp["responsibilities"] = self._responsibilities(job.description, text)
@@ -194,10 +212,22 @@ class ATSEstimator:
         else:
             confidence = "HIGH"
         total = round(sum(comp.values()), 1)
+        ceil_comp["title"] = comp["title"]
+        ceil_comp["experience"] = comp["experience"]
+        ceil_comp["responsibilities"] = comp["responsibilities"]
+        ceil_comp["education"] = comp["education"]
+        ceil_comp["format"] = comp["format"]
+        ceiling = round(max(sum(ceil_comp.values()), total), 1)
+        if unsup_req or unsup_pref:
+            notes.append(
+                "Ceiling excludes skills the profile cannot truthfully claim: "
+                + ", ".join(sorted(unsup_req + unsup_pref))
+            )
         return ATSEstimate(
             total=total,
             components={k: round(v, 1) for k, v in comp.items()},
             confidence=confidence,
+            ceiling=ceiling,
             missing_required=miss_req,
             missing_preferred=miss_pref,
             notes=notes,

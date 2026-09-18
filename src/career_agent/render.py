@@ -175,6 +175,18 @@ def ats_summary_lines(resume: TailoredResume, min_ats: float) -> list[str]:
         f"ESTIMATED ATS {a.total:.0f}/100 (minimum {min_ats:.0f}) · validation "
         f"{'passed' if resume.is_final else 'FAILED'} · {state}"
     )
+    # Measurement only (SYSTEM_SPEC 7): the ceiling says how much of the gap is
+    # closeable truthfully. It gates nothing - the READY rule is still total >= min_ats.
+    at_ceiling = a.ceiling - a.total < 0.5
+    lines.append(
+        f"Truthful ceiling {a.ceiling:.0f}/100 "
+        + (
+            "· already at it, the rest needs a claim she cannot support"
+            if at_ceiling
+            else f"· {a.ceiling - a.total:.0f} points still reachable honestly"
+        )
+        + f" · confidence {a.confidence}"
+    )
     lines.append(
         "Components: "
         + ", ".join(f"{k.replace('_', ' ')} {v:.0f}" for k, v in a.components.items())
