@@ -44,6 +44,8 @@ class ResumeOutcome:
     auto_submit_eligible: bool
     docx: bytes = b""
     board_copy: bool = False
+    # None = never attempted (no tracker row); True/False = what Notion said
+    attached: bool | None = None
     error: str = ""
 
 
@@ -132,6 +134,7 @@ def _attach(sink, ref, rec, resume, outcome, profile, cfg) -> None:  # noqa: ANN
     # Attach first: the Status below must not claim a prepared resume unless the
     # row actually carries the DOCX (SYSTEM_SPEC v1.8 13.3).
     attached = sink.attach_resume(ref, outcome.filename, outcome.docx)
+    outcome.attached = attached
 
     props: dict[str, Any] = {
         "ATS Estimate": {"number": outcome.ats},
@@ -212,6 +215,13 @@ def build_digest(
             miss = f" · missing {', '.join(r.missing[:5])}" if r.missing else ""
             L.append(
                 f"- {r.company} — {r.role} · match {r.score:.0f} · ATS {r.ats:.0f}{miss} · {r.url}"
+            )
+    unattached = [r for r in result.resumes if r.attached is False]
+    if unattached:
+        L.append("## Resume text only — the DOCX did not attach (SYSTEM_SPEC §13.3)")
+        for r in unattached:
+            L.append(
+                f"- {r.company} — {r.role} · {r.filename} · not marked RESUME_PREPARED · {r.url}"
             )
     leads = [(rec, ref) for rec, ref in report.records if rec.raw.source_url]
     if leads:

@@ -860,6 +860,38 @@ def test_daily_resume_upload_failure_falls_back_to_text(real):
     )
 
 
+def test_digest_names_rows_whose_docx_did_not_attach():
+    """Work order 2026-09-18 step 3: a failed attachment must show up in the digest."""
+    from career_agent.discovery.daily import ResumeOutcome
+    from career_agent.discovery.pipeline import RunReport
+
+    def outcome(company, attached):
+        return ResumeOutcome(
+            company=company,
+            role="Engineer",
+            url=f"https://x.example/{company}",
+            purpose="TARGET",
+            score=82.0,
+            ats=91.0,
+            ready=True,
+            filename=f"{company}.docx",
+            missing=[],
+            auto_submit_eligible=False,
+            attached=attached,
+        )
+
+    result = DailyResult()
+    result.resumes = [outcome("Attached", True), outcome("Orphan", False), outcome("NoRow", None)]
+    digest = build_digest("2026-09-18", RunReport("2026-09-18"), result, None)
+
+    assert "the DOCX did not attach" in digest
+    assert "Orphan.docx" in digest
+    # a successful attach, and a row that was never attempted, are not reported as failures
+    section = digest.split("the DOCX did not attach", 1)[1]
+    assert "Attached.docx" not in section
+    assert "NoRow.docx" not in section
+
+
 def test_digest_sections_with_govt_and_pending(real):
     from career_agent.discovery.daily import ResumeOutcome
     from career_agent.discovery.govt import GovtLead, GovtReport
